@@ -176,6 +176,15 @@ export default function Workspace({ projectId, health, onBack }) {
     }
   }
 
+  async function handleExport(format) {
+    try {
+      await api.downloadExport(projectId, format);
+    } catch (err) {
+      setError(err.message || "Export failed");
+      throw err;
+    }
+  }
+
   if (loadState === "loading") {
     return (
       <div className="flex h-full items-center justify-center text-sm text-ink-400">
@@ -247,6 +256,7 @@ export default function Workspace({ projectId, health, onBack }) {
           onAdd={handleAddChapter}
           onDelete={handleDeleteChapter}
           onBack={onBack}
+          onExport={handleExport}
         />
 
         <Editor

@@ -222,4 +222,38 @@ export const api = {
       body: JSON.stringify({ project_id: projectId, chapter_id: chapterId }),
       timeoutMs: 15_000,
     }),
+
+  listExportFormats: (projectId) =>
+    request(`/projects/${projectId}/export/formats`, { timeoutMs: 10_000 }),
+
+  /** Trigger browser download for a publishable export. */
+  async downloadExport(projectId, format = "markdown") {
+    const res = await fetch(
+      `${BASE}/projects/${projectId}/export?format=${encodeURIComponent(format)}`,
+      { headers: { Accept: "*/*" } }
+    );
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const j = await res.json();
+        detail = j.detail || detail;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get("Content-Disposition") || "";
+    const match = cd.match(/filename="?([^";]+)"?/i);
+    const filename = match?.[1] || `manuscript.${format}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    return filename;
+  },
 };

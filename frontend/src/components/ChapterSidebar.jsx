@@ -1,3 +1,14 @@
+import { useState } from "react";
+
+const EXPORTS = [
+  { id: "markdown", label: "Markdown (.md)" },
+  { id: "docx", label: "Word (.docx)" },
+  { id: "epub", label: "EPUB ebook" },
+  { id: "html", label: "HTML (print)" },
+  { id: "txt", label: "Plain text" },
+  { id: "json", label: "Full backup (.json)" },
+];
+
 export default function ChapterSidebar({
   project,
   chapters,
@@ -6,8 +17,22 @@ export default function ChapterSidebar({
   onAdd,
   onDelete,
   onBack,
+  onExport,
 }) {
   const totalWords = chapters.reduce((n, c) => n + (c.word_count || 0), 0);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(null);
+
+  async function handleExport(fmt) {
+    if (!onExport || exporting) return;
+    setExporting(fmt);
+    try {
+      await onExport(fmt);
+      setExportOpen(false);
+    } finally {
+      setExporting(null);
+    }
+  }
 
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-r border-panel-border bg-panel/60">
@@ -30,7 +55,7 @@ export default function ChapterSidebar({
         </button>
       </div>
 
-      <ul className="flex-1 overflow-y-auto px-2 pb-4">
+      <ul className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {chapters.length === 0 && (
           <li className="px-2 py-6 text-center text-xs text-ink-500">
             No chapters yet. Add one to begin.
@@ -71,6 +96,34 @@ export default function ChapterSidebar({
           );
         })}
       </ul>
+
+      <div className="relative border-t border-panel-border p-2">
+        <button
+          type="button"
+          className="btn-ghost w-full justify-between border border-panel-border px-2.5 py-2 text-xs"
+          onClick={() => setExportOpen((v) => !v)}
+          disabled={!project?.id}
+        >
+          <span>Export</span>
+          <span className="font-mono text-[10px] text-ink-500">{exportOpen ? "▴" : "▾"}</span>
+        </button>
+        {exportOpen && (
+          <ul className="mt-1 overflow-hidden rounded-lg border border-panel-border bg-panel-raised shadow-soft">
+            {EXPORTS.map((f) => (
+              <li key={f.id}>
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 text-left text-xs text-ink-200 transition hover:bg-accent/15 hover:text-accent-glow disabled:opacity-50"
+                  disabled={!!exporting}
+                  onClick={() => handleExport(f.id)}
+                >
+                  {exporting === f.id ? "Exporting…" : f.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </aside>
   );
 }
