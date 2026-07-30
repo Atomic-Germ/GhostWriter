@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { useDebouncedCallback } from "../hooks/useDebouncedCallback";
 import AssistPanel from "./AssistPanel";
@@ -8,16 +8,22 @@ import Editor from "./Editor";
 import StatusPill from "./StatusPill";
 import WorldNotes from "./WorldNotes";
 
+function countWords(text) {
+  return text.trim() ? text.trim().split(/\s+/).length : 0;
+}
+
 export default function Workspace({ projectId, health, onBack }) {
   const [project, setProject] = useState(null);
   const [chapters, setChapters] = useState([]);
   const [characters, setCharacters] = useState([]);
   const [activeChapterId, setActiveChapterId] = useState(null);
-  const [rightTab, setRightTab] = useState("ai"); // ai | characters | world
+  const [rightTab, setRightTab] = useState("ai");
   const [saving, setSaving] = useState(false);
   const [indexing, setIndexing] = useState(false);
   const [error, setError] = useState("");
   const [loadState, setLoadState] = useState("loading");
+  const saveGen = useRef(0);
+  const latestContent = useRef({});
 
   const activeChapter = useMemo(
     () => chapters.find((c) => c.id === activeChapterId) || null,
@@ -33,6 +39,9 @@ export default function Workspace({ projectId, health, onBack }) {
       const sorted = [...(p.chapters || [])].sort((a, b) => a.order - b.order);
       setChapters(sorted);
       setCharacters(p.characters || []);
+      sorted.forEach((c) => {
+        latestContent.current[c.id] = c.content || "";
+      });
       setActiveChapterId((prev) => {
         if (prev && sorted.some((c) => c.id === prev)) return prev;
         return sorted[0]?.id || null;
@@ -49,16 +58,31 @@ export default function Workspace({ projectId, health, onBack }) {
   }, [load]);
 
   const saveChapter = useDebouncedCallback(async (chapterId, patch) => {
+    const gen = ++saveGen.current;
     setSaving(true);
     try {
       const updated = await api.updateChapter(projectId, chapterId, patch);
-      setChapters((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      // Only merge metadata — never clobber newer local text mid-type
+      setChapters((prev) =>
+        prev.map((c) => {
+          if (c.id !== updated.id) return c;
+          const local = latestContent.current[c.id];
+          const keepLocal =
+            local !== undefined && local !== updated.content && patch.content !== undefined;
+          return {
+            ...updated,
+            content: keepLocal ? local : updated.content,
+            word_count: keepLocal ? countWords(local) : updated.word_count,
+            title: patch.title !== undefined ? c.title : updated.title,
+          };
+        })
+      );
     } catch (err) {
       setError(err.message);
     } finally {
-      setSaving(false);
+      if (gen === saveGen.current) setSaving(false);
     }
-  }, 700);
+  }, 500);
 
   async function handleAddChapter() {
     const n = chapters.length + 1;
@@ -67,12 +91,14 @@ export default function Workspace({ projectId, health, onBack }) {
       content: "",
       order: chapters.length,
     });
+    latestContent.current[ch.id] = "";
     setChapters((prev) => [...prev, ch]);
     setActiveChapterId(ch.id);
   }
 
   async function handleDeleteChapter(id) {
     await api.deleteChapter(projectId, id);
+    delete latestContent.current[id];
     setChapters((prev) => {
       const next = prev.filter((c) => c.id !== id);
       if (activeChapterId === id) {
@@ -104,33 +130,34 @@ export default function Workspace({ projectId, health, onBack }) {
     setProject(p);
   }
 
-  async function handleAssist({ mode, prompt }) {
-    const content = activeChapter?.content || "";
-    // Prefer text near the end of the chapter as local context
-    const context_text = content.slice(-2000);
-    return api.assist({
-      project_id: projectId,
-      chapter_id: activeChapterId,
-      mode,
-      prompt,
-      context_text,
-    });
+  async function handleAssistStream({ mode, prompt }, handlers) {
+    const content =
+      latestContent.current[activeChapterId] ?? activeChapter?.content ?? "";
+    return api.assistStream(
+      {
+        project_id: projectId,
+        chapter_id: activeChapterId,
+        mode,
+        prompt,
+        context_text: content.slice(-2000),
+      },
+      handlers
+    );
   }
 
   function handleInsert(text) {
     if (!activeChapter) return;
-    // Strip markdown-ish offline banners for insert of pure prose when possible
-    let prose = text;
-    if (prose.includes("**Offline")) {
-      return;
-    }
-    const next = activeChapter.content
-      ? `${activeChapter.content.replace(/\s+$/, "")}\n\n${prose.trim()}\n`
-      : `${prose.trim()}\n`;
+    if (text.includes("**Offline")) return;
+    const base =
+      latestContent.current[activeChapter.id] ?? activeChapter.content ?? "";
+    const next = base
+      ? `${base.replace(/\s+$/, "")}\n\n${text.trim()}\n`
+      : `${text.trim()}\n`;
+    latestContent.current[activeChapter.id] = next;
     setChapters((prev) =>
       prev.map((c) =>
         c.id === activeChapter.id
-          ? { ...c, content: next, word_count: next.trim().split(/\s+/).filter(Boolean).length }
+          ? { ...c, content: next, word_count: countWords(next) }
           : c
       )
     );
@@ -233,9 +260,8 @@ export default function Workspace({ projectId, health, onBack }) {
           }}
           onChangeContent={(content) => {
             if (!activeChapter) return;
-            const word_count = content.trim()
-              ? content.trim().split(/\s+/).length
-              : 0;
+            latestContent.current[activeChapter.id] = content;
+            const word_count = countWords(content);
             setChapters((prev) =>
               prev.map((c) =>
                 c.id === activeChapter.id ? { ...c, content, word_count } : c
@@ -269,7 +295,7 @@ export default function Workspace({ projectId, health, onBack }) {
           <div className="min-h-0 flex-1">
             {rightTab === "ai" && (
               <AssistPanel
-                onAssist={handleAssist}
+                onAssistStream={handleAssistStream}
                 onInsert={handleInsert}
                 onIndex={handleIndex}
                 llmAvailable={!!health?.llm_available}

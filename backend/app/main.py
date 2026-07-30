@@ -1,4 +1,5 @@
 import logging
+import os
 import threading
 from contextlib import asynccontextmanager
 
@@ -24,18 +25,16 @@ def _warmup_background() -> None:
         from app.services.embeddings import warm_embeddings
 
         ok = warm_embeddings()
-        logger.info("Embedding warmup %s", "succeeded" if ok else "failed")
+        logger.info("Embedding warmup %s (%s)", "ok" if ok else "failed", embedding_status())
     except Exception:  # noqa: BLE001
         logger.exception("Embedding warmup crashed")
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    import os
-
     get_settings().ensure_dirs()
     get_indexer().start()
-    # Load embeddings off the request path so Memory can go green without hangs
+    # Hash embedder is instant; ST is heavy — only warm when not skipped
     if os.environ.get("GW_SKIP_EMBED_WARMUP", "").lower() not in ("1", "true", "yes"):
         threading.Thread(
             target=_warmup_background,
@@ -51,7 +50,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         description="Intelligent writing companion with story-aware RAG",
-        version="0.1.0",
+        version="0.1.1",
         lifespan=lifespan,
     )
 
@@ -70,6 +69,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health", response_model=HealthResponse)
     async def health():
+        # Keep this tiny — never touch embeddings/torch here
         llm_ok = await get_llm().check_available()
         return HealthResponse(
             status="ok",
@@ -79,15 +79,19 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health/detail")
     async def health_detail():
-        llm_ok = await get_llm().check_available()
+        llm = get_llm()
+        llm_ok = await llm.check_available()
         from app.services import embeddings as emb
         from app.services.indexer import get_indexer
 
         return {
             "status": "ok",
             "llm_available": llm_ok,
+            "llm_base_url": llm.base_url,
+            "llm_model": llm._model_name(),
             "embedding_ready": is_embedding_ready(),
             "embedding_status": embedding_status(),
+            "embedding_backend": get_settings().embedding_backend,
             "embedding_error": emb.get_load_error(),
             "index_error": get_indexer().last_error,
         }

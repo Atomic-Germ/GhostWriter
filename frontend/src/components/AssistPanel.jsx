@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
 const MODES = [
@@ -18,7 +18,7 @@ const PLACEHOLDERS = {
 };
 
 export default function AssistPanel({
-  onAssist,
+  onAssistStream,
   onInsert,
   onIndex,
   llmAvailable,
@@ -31,30 +31,82 @@ export default function AssistPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [lastLlm, setLastLlm] = useState(null);
+  const [modelName, setModelName] = useState("");
+  const abortRef = useRef(null);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    if (loading && bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [response, loading]);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (!prompt.trim() && mode !== "continue" && mode !== "consistency") return;
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     setError("");
+    setResponse("");
+    setSources([]);
+    setModelName("");
+
+    const defaultPrompts = {
+      continue: "Continue the scene from where the draft leaves off. Respond only with the next paragraph or event.",
+      consistency:
+        "Analyze the current draft excerpt for contradictions with character profiles and established lore. Try to keep your answers breif but complete.",
+    };
+
     try {
-      const defaultPrompts = {
-        continue: "Continue the scene from where the draft leaves off.",
-        consistency:
-          "Analyze the current draft excerpt for contradictions with character profiles and established lore.",
-      };
-      const result = await onAssist({
-        mode,
-        prompt: prompt.trim() || defaultPrompts[mode] || "Help with this scene.",
-      });
-      setResponse(result.response);
-      setSources(result.sources || []);
-      setLastLlm(result.llm_available);
+      await onAssistStream(
+        {
+          mode,
+          prompt: prompt.trim() || defaultPrompts[mode] || "Help with this scene.",
+        },
+        {
+          signal: controller.signal,
+          onMeta: (meta) => {
+            setSources(meta.sources || []);
+            setLastLlm(!!meta.llm_available);
+            if (meta.model) setModelName(meta.model);
+          },
+          onToken: (_piece, full) => {
+            setResponse(full);
+          },
+          onDone: (full) => {
+            if (!controller.signal.aborted) setResponse(full);
+          },
+          onError: (msg) => {
+            if (!controller.signal.aborted) setError(msg);
+          },
+        }
+      );
     } catch (err) {
-      setError(err.message || "Assist failed");
+      const aborted =
+        controller.signal.aborted ||
+        err?.name === "AbortError" ||
+        err?.message?.includes("aborted");
+      if (!aborted) {
+        setError(err.message || "Assist failed");
+      }
+      // Keep whatever tokens already streamed on stop
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleStop(e) {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    abortRef.current?.abort();
+    // Don't setLoading(false) here — let handleSubmit's finally do it after abort.
+    // Swapping Stop→Submit under the cursor would re-fire submit on the same click.
   }
 
   return (
@@ -64,6 +116,7 @@ export default function AssistPanel({
         <div className="flex items-center gap-2">
           <span
             className={`font-mono text-[10px] ${llmAvailable || lastLlm ? "text-emerald-400" : "text-ink-500"}`}
+            title={modelName || undefined}
           >
             {llmAvailable || lastLlm ? "LLM" : "Offline"}
           </span>
@@ -102,9 +155,25 @@ export default function AssistPanel({
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder={PLACEHOLDERS[mode]}
+          disabled={loading}
         />
-        <button type="submit" className="btn-primary w-full" disabled={loading}>
-          {loading ? "Thinking…" : "Ask GhostWriter"}
+        {/* Keep both mounted so Stop never swaps into Submit under the cursor */}
+        <button
+          type="submit"
+          className={`btn-primary w-full ${loading ? "hidden" : ""}`}
+          disabled={loading}
+          tabIndex={loading ? -1 : 0}
+        >
+          Ask GhostWriter
+        </button>
+        <button
+          type="button"
+          className={`btn-danger w-full ${loading ? "" : "hidden"}`}
+          onClick={handleStop}
+          onMouseDown={(e) => e.preventDefault()}
+          tabIndex={loading ? 0 : -1}
+        >
+          Stop generating
         </button>
       </form>
 
@@ -114,18 +183,27 @@ export default function AssistPanel({
             {error}
           </p>
         )}
-        {!response && !error && (
+        {!response && !error && !loading && (
           <p className="py-6 text-center text-xs leading-relaxed text-ink-500">
-            Grounded in your chapters, character dossiers, and world notes via RAG.
-            Connect llama.cpp, Ollama, or any OpenAI-compatible API for full power.
+            Grounded in your chapters, character dossiers, and world notes.
+            Responses stream token-by-token from your local model.
+          </p>
+        )}
+        {loading && !response && (
+          <p className="mb-3 font-mono text-[11px] text-accent animate-pulse">
+            Generating{modelName ? ` · ${modelName}` : "…"}
           </p>
         )}
         {response && (
           <>
             <div className="prose-gw mb-3">
               <ReactMarkdown>{response}</ReactMarkdown>
+              {loading && (
+                <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-accent align-middle" />
+              )}
             </div>
-            {mode === "continue" && (
+            <div ref={bottomRef} />
+            {mode === "continue" && !loading && (
               <button
                 type="button"
                 className="btn-ghost mb-3 w-full border border-panel-border text-xs"
@@ -134,7 +212,7 @@ export default function AssistPanel({
                 Insert into chapter
               </button>
             )}
-            {sources.length > 0 && (
+            {sources.length > 0 && !loading && (
               <div className="mt-2 border-t border-panel-border pt-3">
                 <p className="panel-title mb-2">Context used</p>
                 <ul className="space-y-1">

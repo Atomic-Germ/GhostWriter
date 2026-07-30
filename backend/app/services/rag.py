@@ -260,7 +260,7 @@ class StoryMemory:
         if embedding_status() != "ready" or not query_text.strip():
             return []
 
-        if not _chroma_lock.acquire(timeout=2.0):
+        if not _chroma_lock.acquire(timeout=2000.0):
             logger.warning("Skipping vector query — chroma busy")
             return []
         try:
@@ -379,7 +379,7 @@ class StoryMemory:
         return "\n\n".join(sections), sources
 
     def delete_project_collection(self, project_id: str) -> None:
-        if not _chroma_lock.acquire(timeout=5.0):
+        if not _chroma_lock.acquire(timeout=5000.0):
             return
         try:
             client = self.client

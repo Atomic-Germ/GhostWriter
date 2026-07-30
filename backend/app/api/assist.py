@@ -1,7 +1,9 @@
 import asyncio
+import json
 import logging
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.db.storage import get_store
 from app.models.schemas import (
@@ -20,15 +22,8 @@ logger = logging.getLogger("ghostwriter.assist")
 router = APIRouter(tags=["assist"])
 
 
-@router.post("/assist", response_model=AssistResponse)
-async def assist(payload: AssistRequest):
-    logger.info(
-        "Assist request mode=%s project=%s prompt_chars=%s",
-        payload.mode,
-        payload.project_id,
-        len(payload.prompt or ""),
-    )
-
+async def _prepare_context(payload: AssistRequest) -> tuple[str, list[str], str, bool]:
+    """Returns context, sources, context_text, llm_available_hint."""
     store = get_store()
     memory = get_memory()
     llm = get_llm()
@@ -38,7 +33,7 @@ async def assist(payload: AssistRequest):
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
 
-    context_text = payload.context_text
+    context_text = payload.context_text or ""
     if not context_text and payload.chapter_id:
         try:
             chapter = await asyncio.to_thread(
@@ -48,53 +43,89 @@ async def assist(payload: AssistRequest):
         except FileNotFoundError:
             pass
 
-    # Structured context is enough for lore; vector search is optional bonus
-    # and must never block the LLM call.
-    try:
-        context, sources = await asyncio.wait_for(
-            asyncio.to_thread(
-                memory.build_context_block,
-                project,
-                payload.prompt,
-                context_text or "",
-                True,
-            ),
-            timeout=8.0,
-        )
-    except asyncio.TimeoutError:
-        logger.warning("Context build timed out — using structured context only")
-        context, sources = await asyncio.to_thread(
-            memory.build_context_block,
-            project,
-            payload.prompt,
-            context_text or "",
-            False,  # skip vector
-        )
-    except Exception:  # noqa: BLE001
-        logger.exception("Context build failed — minimal context")
-        context = f"Title: {project.title}\n\n## World Notes\n{project.world_notes}"
-        sources = ["World Notes"] if project.world_notes else []
-
-    logger.info(
-        "Context ready sources=%s chars=%s → calling LLM",
-        len(sources),
-        len(context),
+    context, sources = await asyncio.to_thread(
+        memory.build_context_block,
+        project,
+        payload.prompt,
+        context_text,
+        False,
     )
+    available = await llm.check_available()
+    return context, sources, context_text, available
 
-    response_text, available = await llm.assist(
+
+@router.post("/assist", response_model=AssistResponse)
+async def assist(payload: AssistRequest):
+    """Non-streaming assist (kept for tests / simple clients)."""
+    logger.info("Assist START mode=%s project=%s", payload.mode, payload.project_id)
+    context, sources, context_text, _ = await _prepare_context(payload)
+    response_text, available = await get_llm().assist(
         mode=payload.mode,
         prompt=payload.prompt,
         context=context,
-        context_text=context_text or "",
+        context_text=context_text,
     )
-
-    logger.info("Assist done llm_available=%s response_chars=%s", available, len(response_text))
-
+    logger.info("Assist DONE available=%s chars=%s", available, len(response_text or ""))
     return AssistResponse(
         response=response_text,
         sources=sources,
         mode=payload.mode,
         llm_available=available,
+    )
+
+
+@router.post("/assist/stream")
+async def assist_stream(payload: AssistRequest):
+    """SSE stream: meta → token* → done | error."""
+    logger.info(
+        "Assist STREAM start mode=%s project=%s",
+        payload.mode,
+        payload.project_id,
+    )
+    context, sources, context_text, available = await _prepare_context(payload)
+    llm = get_llm()
+
+    async def event_gen():
+        def sse(obj: dict) -> str:
+            return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+
+        yield sse(
+            {
+                "type": "meta",
+                "mode": payload.mode,
+                "sources": sources,
+                "llm_available": available,
+                "model": llm._model_name() if available else None,
+            }
+        )
+
+        try:
+            async for kind, data in llm.assist_stream(
+                mode=payload.mode,
+                prompt=payload.prompt,
+                context=context,
+                context_text=context_text,
+            ):
+                if kind == "token":
+                    yield sse({"type": "token", "text": data})
+                elif kind == "error":
+                    yield sse({"type": "error", "message": data})
+                elif kind == "done":
+                    yield sse({"type": "done"})
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Assist stream crashed")
+            yield sse({"type": "error", "message": str(exc)})
+
+        logger.info("Assist STREAM end")
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -106,12 +137,9 @@ def index_project(payload: IndexRequest):
         raise HTTPException(status_code=404, detail=str(e)) from e
 
     schedule_reindex(payload.project_id, payload.chapter_id)
-    ready = is_embedding_ready()
     return IndexResponse(
         indexed_chunks=0,
-        message=(
-            "Story memory re-index queued."
-            if ready
-            else "Re-index queued (embeddings still loading)."
-        ),
+        message="Story memory re-index queued."
+        if is_embedding_ready()
+        else "Re-index queued.",
     )

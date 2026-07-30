@@ -113,7 +113,7 @@ def test_project_flow(client):
             "project_id": pid,
             "chapter_id": chapter["id"],
             "mode": "brainstorm",
-            "prompt": "What should happen next?",
+            "prompt": "What should happen next? Keep your answer limited to one paragraph",
             "context_text": "The harbor lights flickered twice.",
         },
     )

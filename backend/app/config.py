@@ -29,17 +29,20 @@ class Settings(BaseSettings):
     chroma_dir: Path | None = None
 
     # LLM: OpenAI-compatible endpoint (llama.cpp server, Ollama, OpenAI, etc.)
-    llm_base_url: str = "http://localhost:8080/v1"
+    llm_base_url: str = "http://127.0.0.1:8080/v1"
     llm_api_key: str = "not-needed"
     llm_model: str = "local-model"
-    llm_max_tokens: int = 1024
-    llm_temperature: float = 0.7
+    llm_max_tokens: int = 256
+    llm_temperature: float = 0.3
 
-    # Embeddings
+    # Embeddings: "hash" (default, fast, no torch) or "st" (sentence-transformers)
+    embedding_backend: str = "hash"
     embedding_model: str = "all-MiniLM-L6-v2"
     rag_top_k: int = 5
     chunk_size: int = 500
     chunk_overlap: int = 80
+    # Auto-index on save (safe with hash backend)
+    auto_index: bool = True
 
     cors_origins: list[str] = [
         "http://localhost:5173",

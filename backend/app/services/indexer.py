@@ -46,7 +46,7 @@ class IndexWorker:
         self._running = False
         self._q.put(None)
         if self._thread:
-            self._thread.join(timeout=2)
+            self._thread.join(timeout=30)
             self._thread = None
 
     def schedule(self, project_id: str, chapter_id: Optional[str] = None) -> None:
