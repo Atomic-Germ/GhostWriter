@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Model files (large, download separately)
+models/*.gguf
+models/*.bin
+models/*.safetensors
+
+# Runtime data
+data/projects/
+data/chroma/
+data/**/*.json
+
+# Env / secrets
+.env
+backend/.env
+*.log
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Embeddings cache
+.cache/
+sentence-transformers/
+venv
+.venv
+*/.venv
+*/node_modules
