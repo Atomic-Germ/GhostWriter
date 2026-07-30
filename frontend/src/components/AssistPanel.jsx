@@ -27,6 +27,8 @@ export default function AssistPanel({
   const [mode, setMode] = useState("brainstorm");
   const [prompt, setPrompt] = useState("");
   const [response, setResponse] = useState("");
+  const [thinking, setThinking] = useState("");
+  const [showThinking, setShowThinking] = useState(true);
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -39,7 +41,7 @@ export default function AssistPanel({
     if (loading && bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
     }
-  }, [response, loading]);
+  }, [response, thinking, loading]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -54,13 +56,15 @@ export default function AssistPanel({
     setLoading(true);
     setError("");
     setResponse("");
+    setThinking("");
+    setShowThinking(true);
     setSources([]);
     setModelName("");
 
     const defaultPrompts = {
-      continue: "Continue the scene from where the draft leaves off. Respond only with the next paragraph or event.",
+      continue: "Continue the scene from where the draft leaves off.",
       consistency:
-        "Analyze the current draft excerpt for contradictions with character profiles and established lore. Try to keep your answers breif but complete.",
+        "Analyze the current draft excerpt for contradictions with character profiles and established lore.",
     };
 
     try {
@@ -76,11 +80,19 @@ export default function AssistPanel({
             setLastLlm(!!meta.llm_available);
             if (meta.model) setModelName(meta.model);
           },
-          onToken: (_piece, full) => {
-            setResponse(full);
+          onToken: (_piece, full) => setResponse(full),
+          onThinking: (_piece, full) => setThinking(full),
+          onPromoteThinking: (fullThinking) => {
+            // reasoning-only models: answer lives in the thinking stream
+            setResponse(fullThinking || "");
+            setShowThinking(false);
           },
-          onDone: (full) => {
-            if (!controller.signal.aborted) setResponse(full);
+          onDone: (full, meta) => {
+            if (full) setResponse(full);
+            else if (meta?.thinking) {
+              setResponse(meta.thinking);
+              setShowThinking(false);
+            }
           },
           onError: (msg) => {
             if (!controller.signal.aborted) setError(msg);
@@ -92,10 +104,7 @@ export default function AssistPanel({
         controller.signal.aborted ||
         err?.name === "AbortError" ||
         err?.message?.includes("aborted");
-      if (!aborted) {
-        setError(err.message || "Assist failed");
-      }
-      // Keep whatever tokens already streamed on stop
+      if (!aborted) setError(err.message || "Assist failed");
     } finally {
       setLoading(false);
     }
@@ -105,9 +114,10 @@ export default function AssistPanel({
     e?.preventDefault?.();
     e?.stopPropagation?.();
     abortRef.current?.abort();
-    // Don't setLoading(false) here — let handleSubmit's finally do it after abort.
-    // Swapping Stop→Submit under the cursor would re-fire submit on the same click.
   }
+
+  const displayText = response || (loading && thinking ? "" : thinking);
+  const insertable = response || thinking;
 
   return (
     <div className="flex h-full flex-col">
@@ -157,7 +167,6 @@ export default function AssistPanel({
           placeholder={PLACEHOLDERS[mode]}
           disabled={loading}
         />
-        {/* Keep both mounted so Stop never swaps into Submit under the cursor */}
         <button
           type="submit"
           className={`btn-primary w-full ${loading ? "hidden" : ""}`}
@@ -183,31 +192,52 @@ export default function AssistPanel({
             {error}
           </p>
         )}
-        {!response && !error && !loading && (
+        {!displayText && !thinking && !error && !loading && (
           <p className="py-6 text-center text-xs leading-relaxed text-ink-500">
             Grounded in your chapters, character dossiers, and world notes.
             Responses stream token-by-token from your local model.
           </p>
         )}
-        {loading && !response && (
+        {loading && !thinking && !response && (
           <p className="mb-3 font-mono text-[11px] text-accent animate-pulse">
             Generating{modelName ? ` · ${modelName}` : "…"}
           </p>
         )}
-        {response && (
+
+        {thinking && showThinking && (
+          <details
+            className="mb-3 rounded-lg border border-panel-border bg-ink-950/50 open:pb-2"
+            open={loading && !response}
+          >
+            <summary className="cursor-pointer select-none px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wide text-ink-500">
+              {loading && !response ? "Thinking…" : "Model reasoning"}
+              <span className="ml-2 normal-case tracking-normal text-ink-600">
+                ({thinking.length.toLocaleString()} chars)
+              </span>
+            </summary>
+            <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap px-2.5 pb-1 font-mono text-[10px] leading-relaxed text-ink-400">
+              {thinking}
+              {loading && !response && (
+                <span className="ml-0.5 inline-block h-2.5 w-1 animate-pulse bg-accent align-middle" />
+              )}
+            </pre>
+          </details>
+        )}
+
+        {displayText && (
           <>
             <div className="prose-gw mb-3">
-              <ReactMarkdown>{response}</ReactMarkdown>
-              {loading && (
+              <ReactMarkdown>{displayText}</ReactMarkdown>
+              {loading && response && (
                 <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-accent align-middle" />
               )}
             </div>
             <div ref={bottomRef} />
-            {mode === "continue" && !loading && (
+            {mode === "continue" && !loading && insertable && (
               <button
                 type="button"
                 className="btn-ghost mb-3 w-full border border-panel-border text-xs"
-                onClick={() => onInsert(response)}
+                onClick={() => onInsert(insertable)}
               >
                 Insert into chapter
               </button>

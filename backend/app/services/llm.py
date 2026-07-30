@@ -177,9 +177,66 @@ class LLMService:
                 logger.error("LLM error %s: %s", r.status_code, r.text[:500])
                 r.raise_for_status()
             data = r.json()
-            text = (data["choices"][0]["message"]["content"] or "").strip()
+            msg = data["choices"][0].get("message") or {}
+            text = self._message_text(msg)
             logger.info("LLM response chars=%s", len(text))
             return text
+
+    @staticmethod
+    def _message_text(msg: dict) -> str:
+        """Prefer visible content; fall back to reasoning (thinking models)."""
+        content = msg.get("content")
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+        # Some servers return content as a list of parts
+        if isinstance(content, list):
+            parts = []
+            for p in content:
+                if isinstance(p, str):
+                    parts.append(p)
+                elif isinstance(p, dict) and p.get("text"):
+                    parts.append(str(p["text"]))
+            joined = "".join(parts).strip()
+            if joined:
+                return joined
+        for key in (
+            "reasoning_content",
+            "reasoning",
+            "thinking",
+            "//reasoning_content",
+        ):
+            val = msg.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+        return (content or "").strip() if isinstance(content, str) else ""
+
+    @staticmethod
+    def _delta_pieces(delta: dict) -> list[tuple[str, str]]:
+        """Return [(kind, text)] where kind is content|reasoning."""
+        out: list[tuple[str, str]] = []
+        if not isinstance(delta, dict):
+            return out
+        # Visible answer tokens
+        c = delta.get("content")
+        if isinstance(c, str) and c:
+            out.append(("content", c))
+        elif isinstance(c, list):
+            for p in c:
+                if isinstance(p, str) and p:
+                    out.append(("content", p))
+                elif isinstance(p, dict) and p.get("text"):
+                    out.append(("content", str(p["text"])))
+        # Thinking / chain-of-thought (llama.cpp reasoning models)
+        for key in (
+            "reasoning_content",
+            "reasoning",
+            "thinking",
+            "reasoning_text",
+        ):
+            r = delta.get(key)
+            if isinstance(r, str) and r:
+                out.append(("reasoning", r))
+        return out
 
     async def stream_complete(
         self,
@@ -188,8 +245,8 @@ class LLMService:
         system_prompt: str,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-    ) -> AsyncIterator[str]:
-        """Yield text deltas from an OpenAI-compatible streaming completion."""
+    ) -> AsyncIterator[tuple[str, str]]:
+        """Yield (kind, text) deltas: kind is 'content' or 'reasoning'."""
         payload = self._payload(
             user_message=user_message,
             system_prompt=system_prompt,
@@ -223,7 +280,6 @@ class LLMService:
                     if not line:
                         continue
                     if line.startswith(":"):
-                        # SSE comment / keepalive
                         continue
                     if not line.startswith("data:"):
                         continue
@@ -237,10 +293,16 @@ class LLMService:
                     choices = chunk.get("choices") or []
                     if not choices:
                         continue
-                    delta = choices[0].get("delta") or {}
-                    piece = delta.get("content")
-                    if piece:
-                        yield piece
+                    choice = choices[0] or {}
+                    delta = choice.get("delta") or {}
+                    # Some servers put final message on the last chunk
+                    if not delta and choice.get("message"):
+                        text = self._message_text(choice["message"])
+                        if text:
+                            yield ("content", text)
+                        continue
+                    for kind, piece in self._delta_pieces(delta):
+                        yield (kind, piece)
 
     async def assist(
         self,
@@ -284,7 +346,7 @@ class LLMService:
         context: str,
         context_text: str = "",
     ) -> AsyncIterator[tuple[str, str]]:
-        """Yield (event_type, payload) pairs: meta|token|error|done."""
+        """Yield (event_type, payload): token|thinking|error|done."""
         available = await self.check_available()
         system = MODE_SYSTEM_PROMPTS.get(mode, MODE_SYSTEM_PROMPTS["brainstorm"])
         user_message = self.build_user_message(
@@ -298,11 +360,22 @@ class LLMService:
             return
 
         try:
-            async for piece in self.stream_complete(
+            saw_content = False
+            reasoning_buf: list[str] = []
+            async for kind, piece in self.stream_complete(
                 user_message=user_message,
                 system_prompt=system,
             ):
-                yield ("token", piece)
+                if kind == "content":
+                    saw_content = True
+                    yield ("token", piece)
+                else:
+                    reasoning_buf.append(piece)
+                    yield ("thinking", piece)
+            # Models that only emit reasoning_content: promote to answer
+            if not saw_content and reasoning_buf:
+                # Already streamed as thinking; signal client to promote
+                yield ("promote_thinking", "")
             yield ("done", "")
         except Exception as exc:  # noqa: BLE001
             logger.exception("LLM stream assist failed")

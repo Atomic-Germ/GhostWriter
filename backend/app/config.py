@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://127.0.0.1:8080/v1"
     llm_api_key: str = "not-needed"
     llm_model: str = "local-model"
-    llm_max_tokens: int = 256
+    llm_max_tokens: int = 8192
     llm_temperature: float = 0.3
 
     # Embeddings: "hash" (default, fast, no torch) or "st" (sentence-transformers)

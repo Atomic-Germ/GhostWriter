@@ -44,9 +44,20 @@ async function request(path, options = {}) {
 }
 
 /**
- * Stream assist via SSE. callbacks: onMeta, onToken, onDone, onError
+ * Stream assist via SSE.
+ * callbacks: onMeta, onToken, onThinking, onPromoteThinking, onDone, onError
  */
-async function assistStream(body, { onMeta, onToken, onDone, onError, signal } = {}) {
+async function assistStream(body, handlers = {}) {
+  const {
+    onMeta,
+    onToken,
+    onThinking,
+    onPromoteThinking,
+    onDone,
+    onError,
+    signal,
+  } = handlers;
+
   const res = await fetch(`${BASE}/assist/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
@@ -73,44 +84,62 @@ async function assistStream(body, { onMeta, onToken, onDone, onError, signal } =
   const decoder = new TextDecoder();
   let buffer = "";
   let full = "";
+  let thinking = "";
+  let sawDone = false;
+
+  const handleEvent = (evt) => {
+    if (evt.type === "meta") {
+      onMeta?.(evt);
+    } else if (evt.type === "token") {
+      full += evt.text || "";
+      onToken?.(evt.text || "", full);
+    } else if (evt.type === "thinking") {
+      thinking += evt.text || "";
+      onThinking?.(evt.text || "", thinking);
+    } else if (evt.type === "promote_thinking") {
+      // Model only produced reasoning_content — use it as the answer
+      if (!full && thinking) {
+        full = thinking;
+        onToken?.("", full);
+      }
+      onPromoteThinking?.(thinking);
+    } else if (evt.type === "error") {
+      onError?.(evt.message || "Stream error");
+    } else if (evt.type === "done") {
+      sawDone = true;
+      if (!full && thinking) {
+        full = thinking;
+      }
+      onDone?.(full, { thinking });
+    }
+  };
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 
-    // SSE events separated by blank line
     const parts = buffer.split("\n\n");
     buffer = parts.pop() || "";
 
     for (const part of parts) {
-      const lines = part.split("\n");
-      for (const line of lines) {
+      for (const line of part.split("\n")) {
         if (!line.startsWith("data:")) continue;
         const raw = line.slice(5).trim();
         if (!raw || raw === "[DONE]") continue;
-        let evt;
         try {
-          evt = JSON.parse(raw);
+          handleEvent(JSON.parse(raw));
         } catch {
-          continue;
-        }
-        if (evt.type === "meta") {
-          onMeta?.(evt);
-        } else if (evt.type === "token") {
-          full += evt.text || "";
-          onToken?.(evt.text || "", full);
-        } else if (evt.type === "error") {
-          onError?.(evt.message || "Stream error");
-        } else if (evt.type === "done") {
-          onDone?.(full, evt);
+          /* skip bad chunk */
         }
       }
     }
   }
 
-  // If stream ended without explicit done
-  if (full) onDone?.(full, {});
+  if (!sawDone) {
+    if (!full && thinking) full = thinking;
+    onDone?.(full, { thinking });
+  }
   return full;
 }
 

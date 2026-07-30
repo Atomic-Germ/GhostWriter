@@ -108,6 +108,10 @@ async def assist_stream(payload: AssistRequest):
             ):
                 if kind == "token":
                     yield sse({"type": "token", "text": data})
+                elif kind == "thinking":
+                    yield sse({"type": "thinking", "text": data})
+                elif kind == "promote_thinking":
+                    yield sse({"type": "promote_thinking"})
                 elif kind == "error":
                     yield sse({"type": "error", "message": data})
                 elif kind == "done":
@@ -122,7 +126,7 @@ async def assist_stream(payload: AssistRequest):
         event_gen(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
