@@ -1,0 +1,1 @@
+"""GhostWriter backend application."""

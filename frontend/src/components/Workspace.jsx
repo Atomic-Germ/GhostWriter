@@ -1,0 +1,298 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { api } from "../api";
+import { useDebouncedCallback } from "../hooks/useDebouncedCallback";
+import AssistPanel from "./AssistPanel";
+import ChapterSidebar from "./ChapterSidebar";
+import CharacterPanel from "./CharacterPanel";
+import Editor from "./Editor";
+import StatusPill from "./StatusPill";
+import WorldNotes from "./WorldNotes";
+
+export default function Workspace({ projectId, health, onBack }) {
+  const [project, setProject] = useState(null);
+  const [chapters, setChapters] = useState([]);
+  const [characters, setCharacters] = useState([]);
+  const [activeChapterId, setActiveChapterId] = useState(null);
+  const [rightTab, setRightTab] = useState("ai"); // ai | characters | world
+  const [saving, setSaving] = useState(false);
+  const [indexing, setIndexing] = useState(false);
+  const [error, setError] = useState("");
+  const [loadState, setLoadState] = useState("loading");
+
+  const activeChapter = useMemo(
+    () => chapters.find((c) => c.id === activeChapterId) || null,
+    [chapters, activeChapterId]
+  );
+
+  const load = useCallback(async () => {
+    setLoadState("loading");
+    setError("");
+    try {
+      const p = await api.getProject(projectId);
+      setProject(p);
+      const sorted = [...(p.chapters || [])].sort((a, b) => a.order - b.order);
+      setChapters(sorted);
+      setCharacters(p.characters || []);
+      setActiveChapterId((prev) => {
+        if (prev && sorted.some((c) => c.id === prev)) return prev;
+        return sorted[0]?.id || null;
+      });
+      setLoadState("ready");
+    } catch (err) {
+      setError(err.message);
+      setLoadState("error");
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const saveChapter = useDebouncedCallback(async (chapterId, patch) => {
+    setSaving(true);
+    try {
+      const updated = await api.updateChapter(projectId, chapterId, patch);
+      setChapters((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }, 700);
+
+  async function handleAddChapter() {
+    const n = chapters.length + 1;
+    const ch = await api.createChapter(projectId, {
+      title: `Chapter ${n}`,
+      content: "",
+      order: chapters.length,
+    });
+    setChapters((prev) => [...prev, ch]);
+    setActiveChapterId(ch.id);
+  }
+
+  async function handleDeleteChapter(id) {
+    await api.deleteChapter(projectId, id);
+    setChapters((prev) => {
+      const next = prev.filter((c) => c.id !== id);
+      if (activeChapterId === id) {
+        setActiveChapterId(next[0]?.id || null);
+      }
+      return next;
+    });
+  }
+
+  async function handleCreateCharacter(body) {
+    const c = await api.createCharacter(projectId, body);
+    setCharacters((prev) => [...prev, c]);
+    return c;
+  }
+
+  async function handleUpdateCharacter(id, body) {
+    const c = await api.updateCharacter(projectId, id, body);
+    setCharacters((prev) => prev.map((x) => (x.id === id ? c : x)));
+    return c;
+  }
+
+  async function handleDeleteCharacter(id) {
+    await api.deleteCharacter(projectId, id);
+    setCharacters((prev) => prev.filter((c) => c.id !== id));
+  }
+
+  async function handleSaveWorld(notes) {
+    const p = await api.updateWorldNotes(projectId, notes);
+    setProject(p);
+  }
+
+  async function handleAssist({ mode, prompt }) {
+    const content = activeChapter?.content || "";
+    // Prefer text near the end of the chapter as local context
+    const context_text = content.slice(-2000);
+    return api.assist({
+      project_id: projectId,
+      chapter_id: activeChapterId,
+      mode,
+      prompt,
+      context_text,
+    });
+  }
+
+  function handleInsert(text) {
+    if (!activeChapter) return;
+    // Strip markdown-ish offline banners for insert of pure prose when possible
+    let prose = text;
+    if (prose.includes("**Offline")) {
+      return;
+    }
+    const next = activeChapter.content
+      ? `${activeChapter.content.replace(/\s+$/, "")}\n\n${prose.trim()}\n`
+      : `${prose.trim()}\n`;
+    setChapters((prev) =>
+      prev.map((c) =>
+        c.id === activeChapter.id
+          ? { ...c, content: next, word_count: next.trim().split(/\s+/).filter(Boolean).length }
+          : c
+      )
+    );
+    saveChapter(activeChapter.id, { content: next });
+  }
+
+  async function handleIndex() {
+    setIndexing(true);
+    try {
+      await api.index(projectId);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIndexing(false);
+    }
+  }
+
+  if (loadState === "loading") {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-ink-400">
+        Opening manuscript…
+      </div>
+    );
+  }
+
+  if (loadState === "error") {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3">
+        <p className="text-sm text-red-300">{error}</p>
+        <button type="button" className="btn-ghost" onClick={onBack}>
+          Back to projects
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <header className="flex items-center justify-between border-b border-panel-border bg-panel/40 px-4 py-2">
+        <div className="flex items-center gap-3">
+          <span className="font-serif text-sm text-accent">GhostWriter</span>
+          {project?.genre && (
+            <span className="rounded-full border border-panel-border px-2 py-0.5 font-mono text-[10px] text-ink-500">
+              {project.genre}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <StatusPill label="API" ok title="Backend reachable" />
+          <StatusPill
+            label="LLM"
+            ok={!!health?.llm_available}
+            title={
+              health?.llm_available
+                ? "Language model connected"
+                : "No LLM — offline helpers active"
+            }
+          />
+          <StatusPill
+            label="Memory"
+            ok={!!health?.embedding_ready}
+            title={
+              health?.embedding_ready
+                ? "Embeddings ready for RAG"
+                : "Embeddings loading or unavailable"
+            }
+          />
+        </div>
+      </header>
+
+      {error && (
+        <div className="border-b border-red-900/40 bg-red-950/30 px-4 py-1.5 text-xs text-red-200">
+          {error}
+          <button type="button" className="ml-3 underline" onClick={() => setError("")}>
+            dismiss
+          </button>
+        </div>
+      )}
+
+      <div className="flex min-h-0 flex-1">
+        <ChapterSidebar
+          project={project}
+          chapters={chapters}
+          activeChapterId={activeChapterId}
+          onSelect={setActiveChapterId}
+          onAdd={handleAddChapter}
+          onDelete={handleDeleteChapter}
+          onBack={onBack}
+        />
+
+        <Editor
+          chapter={activeChapter}
+          saving={saving}
+          onChangeTitle={(title) => {
+            if (!activeChapter) return;
+            setChapters((prev) =>
+              prev.map((c) => (c.id === activeChapter.id ? { ...c, title } : c))
+            );
+            saveChapter(activeChapter.id, { title });
+          }}
+          onChangeContent={(content) => {
+            if (!activeChapter) return;
+            const word_count = content.trim()
+              ? content.trim().split(/\s+/).length
+              : 0;
+            setChapters((prev) =>
+              prev.map((c) =>
+                c.id === activeChapter.id ? { ...c, content, word_count } : c
+              )
+            );
+            saveChapter(activeChapter.id, { content });
+          }}
+        />
+
+        <aside className="flex w-[380px] shrink-0 flex-col border-l border-panel-border bg-panel/60">
+          <div className="flex border-b border-panel-border">
+            {[
+              ["ai", "AI"],
+              ["characters", "Cast"],
+              ["world", "World"],
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setRightTab(id)}
+                className={`flex-1 py-2.5 text-xs font-medium transition ${
+                  rightTab === id
+                    ? "border-b-2 border-accent text-accent-glow"
+                    : "text-ink-500 hover:text-ink-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="min-h-0 flex-1">
+            {rightTab === "ai" && (
+              <AssistPanel
+                onAssist={handleAssist}
+                onInsert={handleInsert}
+                onIndex={handleIndex}
+                llmAvailable={!!health?.llm_available}
+                indexing={indexing}
+              />
+            )}
+            {rightTab === "characters" && (
+              <CharacterPanel
+                characters={characters}
+                onCreate={handleCreateCharacter}
+                onUpdate={handleUpdateCharacter}
+                onDelete={handleDeleteCharacter}
+              />
+            )}
+            {rightTab === "world" && (
+              <WorldNotes
+                notes={project?.world_notes || ""}
+                onSave={handleSaveWorld}
+              />
+            )}
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}

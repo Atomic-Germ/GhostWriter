@@ -1,0 +1,148 @@
+from datetime import datetime, timezone
+from typing import Optional
+from pydantic import BaseModel, Field
+import uuid
+
+
+def new_id() -> str:
+    return str(uuid.uuid4())
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ── Characters ──────────────────────────────────────────────
+
+class CharacterBase(BaseModel):
+    name: str
+    role: str = ""
+    physical_traits: str = ""
+    personality: str = ""
+    motivations: str = ""
+    speech_patterns: str = ""
+    backstory: str = ""
+    notes: str = ""
+    relationships: str = ""
+
+
+class CharacterCreate(CharacterBase):
+    pass
+
+
+class CharacterUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    physical_traits: Optional[str] = None
+    personality: Optional[str] = None
+    motivations: Optional[str] = None
+    speech_patterns: Optional[str] = None
+    backstory: Optional[str] = None
+    notes: Optional[str] = None
+    relationships: Optional[str] = None
+
+
+class Character(CharacterBase):
+    id: str = Field(default_factory=new_id)
+    created_at: str = Field(default_factory=_now)
+    updated_at: str = Field(default_factory=_now)
+
+
+# ── Chapters ────────────────────────────────────────────────
+
+class ChapterBase(BaseModel):
+    title: str
+    content: str = ""
+    order: int = 0
+    summary: str = ""
+
+
+class ChapterCreate(ChapterBase):
+    pass
+
+
+class ChapterUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    order: Optional[int] = None
+    summary: Optional[str] = None
+
+
+class Chapter(ChapterBase):
+    id: str = Field(default_factory=new_id)
+    word_count: int = 0
+    created_at: str = Field(default_factory=_now)
+    updated_at: str = Field(default_factory=_now)
+
+
+# ── Projects ────────────────────────────────────────────────
+
+class ProjectBase(BaseModel):
+    title: str
+    description: str = ""
+    genre: str = ""
+    premise: str = ""
+
+
+class ProjectCreate(ProjectBase):
+    pass
+
+
+class ProjectUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    genre: Optional[str] = None
+    premise: Optional[str] = None
+
+
+class Project(ProjectBase):
+    id: str = Field(default_factory=new_id)
+    characters: list[Character] = Field(default_factory=list)
+    chapters: list[Chapter] = Field(default_factory=list)
+    world_notes: str = ""
+    created_at: str = Field(default_factory=_now)
+    updated_at: str = Field(default_factory=_now)
+
+
+class ProjectSummary(BaseModel):
+    id: str
+    title: str
+    description: str = ""
+    genre: str = ""
+    chapter_count: int = 0
+    character_count: int = 0
+    word_count: int = 0
+    updated_at: str = ""
+
+
+# ── AI / Assist ─────────────────────────────────────────────
+
+class AssistRequest(BaseModel):
+    project_id: str
+    chapter_id: Optional[str] = None
+    prompt: str
+    mode: str = "brainstorm"  # brainstorm | continue | consistency | lore | plot
+    context_text: str = ""
+
+
+class AssistResponse(BaseModel):
+    response: str
+    sources: list[str] = Field(default_factory=list)
+    mode: str = "brainstorm"
+    llm_available: bool = True
+
+
+class IndexRequest(BaseModel):
+    project_id: str
+    chapter_id: Optional[str] = None
+
+
+class IndexResponse(BaseModel):
+    indexed_chunks: int
+    message: str
+
+
+class HealthResponse(BaseModel):
+    status: str
+    llm_available: bool
+    embedding_ready: bool

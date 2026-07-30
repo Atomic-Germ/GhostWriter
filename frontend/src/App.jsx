@@ -1,0 +1,113 @@
+import { useCallback, useEffect, useState } from "react";
+import { api } from "./api";
+import ProjectList from "./components/ProjectList";
+import Workspace from "./components/Workspace";
+
+export default function App() {
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeProjectId, setActiveProjectId] = useState(null);
+  const [health, setHealth] = useState(null);
+  const [bootError, setBootError] = useState("");
+
+  const refreshProjects = useCallback(async () => {
+    const list = await api.listProjects();
+    setProjects(list);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [h] = await Promise.all([api.health(), refreshProjects()]);
+        if (!cancelled) {
+          setHealth(h);
+          setBootError("");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setBootError(
+            err.message ||
+              "Cannot reach the GhostWriter API. Is the backend running on :8000?"
+          );
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    const t = setInterval(async () => {
+      try {
+        const h = await api.health();
+        if (!cancelled) setHealth(h);
+      } catch {
+        /* ignore poll errors */
+      }
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [refreshProjects]);
+
+  async function handleCreate(form) {
+    const p = await api.createProject(form);
+    await refreshProjects();
+    setActiveProjectId(p.id);
+  }
+
+  async function handleDelete(id) {
+    await api.deleteProject(id);
+    if (activeProjectId === id) setActiveProjectId(null);
+    await refreshProjects();
+  }
+
+  if (bootError && !activeProjectId) {
+    return (
+      <div className="flex h-full items-center justify-center p-8">
+        <div className="card max-w-md p-8 text-center">
+          <h1 className="mb-2 font-serif text-2xl text-ink-50">GhostWriter</h1>
+          <p className="mb-4 text-sm text-red-300">{bootError}</p>
+          <pre className="mb-4 rounded-lg bg-ink-950 p-3 text-left font-mono text-[11px] text-ink-400">
+            {`cd backend && python run.py\ncd frontend && npm run dev`}
+          </pre>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => window.location.reload()}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (activeProjectId) {
+    return (
+      <div className="h-full">
+        <Workspace
+          projectId={activeProjectId}
+          health={health}
+          onBack={() => {
+            setActiveProjectId(null);
+            refreshProjects();
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full overflow-y-auto">
+      <ProjectList
+        projects={projects}
+        loading={loading}
+        onOpen={setActiveProjectId}
+        onCreate={handleCreate}
+        onDelete={handleDelete}
+      />
+    </div>
+  );
+}

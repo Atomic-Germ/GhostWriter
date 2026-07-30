@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(1200px 600px at 10% -10%, #2a2418 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #1a2230 0%, transparent 50%),
+    #16140f;
+  font-family: "DM Sans", system-ui, sans-serif;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #3a342c;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #50483c;
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition
+      focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-ink-950 hover:bg-accent-glow;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-ink-200 hover:bg-panel-raised hover:text-ink-50;
+  }
+  .btn-danger {
+    @apply btn bg-red-950/60 text-red-200 hover:bg-red-900/70 border border-red-900/50;
+  }
+  .input {
+    @apply w-full rounded-lg border border-panel-border bg-ink-950/60 px-3 py-2 text-sm text-ink-100
+      placeholder:text-ink-500 focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/40;
+  }
+  .label {
+    @apply mb-1 block text-xs font-medium uppercase tracking-wide text-ink-400;
+  }
+  .card {
+    @apply rounded-xl border border-panel-border bg-panel/80 shadow-soft backdrop-blur;
+  }
+  .panel-title {
+    @apply text-xs font-semibold uppercase tracking-[0.14em] text-ink-400;
+  }
+}
+
+/* Editor textarea */
+.editor-area {
+  font-family: "Literata", Georgia, serif;
+  font-size: 1.125rem;
+  line-height: 1.85;
+  caret-color: #c4a35a;
+}
+
+/* Markdown in AI panel */
+.prose-gw {
+  @apply text-sm leading-relaxed text-ink-200;
+}
+.prose-gw p {
+  @apply mb-3;
+}
+.prose-gw ul {
+  @apply mb-3 list-disc pl-5 space-y-1;
+}
+.prose-gw ol {
+  @apply mb-3 list-decimal pl-5 space-y-1;
+}
+.prose-gw strong {
+  @apply font-semibold text-ink-50;
+}
+.prose-gw code {
+  @apply rounded bg-ink-900 px-1 py-0.5 font-mono text-[0.8rem] text-accent-glow;
+}
+.prose-gw pre {
+  @apply mb-3 overflow-x-auto rounded-lg bg-ink-950 p-3 font-mono text-[0.8rem];
+}
+.prose-gw blockquote {
+  @apply mb-3 border-l-2 border-accent/50 pl-3 italic text-ink-300;
+}
+.prose-gw h1,
+.prose-gw h2,
+.prose-gw h3 {
+  @apply mb-2 mt-3 font-semibold text-ink-50;
+}
