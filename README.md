@@ -8,7 +8,8 @@ Intelligent writing companion for authors. GhostWriter keeps a living memory of 
 - **Character dossiers** — traits, motivations, speech patterns, relationships
 - **World & lore notes** — freeform world-building stored with the manuscript
 - **Story memory (RAG)** — chapters/characters/world notes chunked into ChromaDB
-- **AI assist modes** — Brainstorm · Continue · Consistency · Lore · Plot
+- **AI assist modes** — Brainstorm · Continue · Consistency · Lore · Plot · Influence
+- **Influence Analyzer** — maps literary/thematic resonances with cited evidence (craft awareness, not judgment)
 - **Local-first LLM** — any OpenAI-compatible API (llama.cpp server, Ollama, OpenAI, …)
 - **Offline fallbacks** — useful checklists when no model is running
 

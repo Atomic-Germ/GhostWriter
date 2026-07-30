@@ -7,6 +7,7 @@ const MODES = [
   { id: "consistency", label: "Consistency" },
   { id: "lore", label: "Lore" },
   { id: "plot", label: "Plot" },
+  { id: "influence", label: "Influence" },
 ];
 
 const PLACEHOLDERS = {
@@ -15,6 +16,18 @@ const PLACEHOLDERS = {
   consistency: "Check this scene against character profiles…",
   lore: "What do we know about the capital's magic laws?",
   plot: "Are there unresolved threads from chapter 1?",
+  influence:
+    "Optional focus — e.g. diction only, Eddie’s voice, or “am I leaning too hard on PKD?”",
+};
+
+const DEFAULT_PROMPTS = {
+  continue: "Continue the scene from where the draft leaves off.",
+  consistency:
+    "Analyze the current draft excerpt for contradictions with character profiles and established lore.",
+  influence:
+    "Map the literary, cinematic, and philosophical influences audible in this manuscript. " +
+    "Treat influence as creative DNA — neither good nor bad. Cite specific passages as evidence, " +
+    "note what is transformed vs. merely echoed, and highlight where the author's own voice is clearest.",
 };
 
 export default function AssistPanel({
@@ -47,7 +60,14 @@ export default function AssistPanel({
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!prompt.trim() && mode !== "continue" && mode !== "consistency") return;
+    if (
+      !prompt.trim() &&
+      mode !== "continue" &&
+      mode !== "consistency" &&
+      mode !== "influence"
+    ) {
+      return;
+    }
 
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -61,17 +81,11 @@ export default function AssistPanel({
     setSources([]);
     setModelName("");
 
-    const defaultPrompts = {
-      continue: "Continue the scene from where the draft leaves off.",
-      consistency:
-        "Analyze the current draft excerpt for contradictions with character profiles and established lore.",
-    };
-
     try {
       await onAssistStream(
         {
           mode,
-          prompt: prompt.trim() || defaultPrompts[mode] || "Help with this scene.",
+          prompt: prompt.trim() || DEFAULT_PROMPTS[mode] || "Help with this scene.",
         },
         {
           signal: controller.signal,
@@ -194,8 +208,21 @@ export default function AssistPanel({
         )}
         {!displayText && !thinking && !error && !loading && (
           <p className="py-6 text-center text-xs leading-relaxed text-ink-500">
-            Grounded in your chapters, character dossiers, and world notes.
-            Responses stream token-by-token from your local model.
+            {mode === "influence" ? (
+              <>
+                <span className="mb-2 block font-serif text-sm text-ink-300">
+                  Influence Analyzer
+                </span>
+                Maps stylistic and thematic resonances in your manuscript — not as
+                praise or blame, but as craft awareness. Empty prompt runs a full
+                fingerprint; add a focus to narrow the lens.
+              </>
+            ) : (
+              <>
+                Grounded in your chapters, character dossiers, and world notes.
+                Responses stream token-by-token from your local model.
+              </>
+            )}
           </p>
         )}
         {loading && !thinking && !response && (

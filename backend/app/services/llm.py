@@ -43,6 +43,32 @@ MODE_SYSTEM_PROMPTS = {
         "pacing, unresolved hooks, and arc structure. Identify potential plot holes "
         "and suggest how to resolve or deepen them. Be constructive and concrete."
     ),
+    "influence": (
+        "You are GhostWriter's Influence Analyzer — a literary critic who helps authors "
+        "see their own creative DNA without judgment.\n\n"
+        "Influence is neither good nor bad. Naming it is a tool for self-awareness: "
+        "where the work echoes predecessors, where it transforms them, and where the "
+        "author's own voice is most distinct.\n\n"
+        "When analyzing the provided manuscript, characters, and world notes:\n"
+        "1. **Fingerprint** — tone, diction, sentence rhythm, POV habits, thematic obsessions, "
+        "genre posture (in 3–6 concrete observations tied to the text).\n"
+        "2. **Resonances** — likely literary, cinematic, philosophical, or cultural echoes "
+        "(authors, works, movements, or traditions). For each, give:\n"
+        "   - the influence hypothesis\n"
+        "   - strength (faint / clear / strong)\n"
+        "   - evidence: short quotes or close paraphrase from *this* manuscript\n"
+        "   - what is borrowed vs. transformed\n"
+        "3. **Original signal** — moments that feel least derivative; the author's own bias, "
+        "humor, moral temperature, or formal risks.\n"
+        "4. **Creative options** (optional, only if useful) — ways to lean into an influence "
+        "deliberately, or to push away from it, without prescribing a 'correct' style.\n\n"
+        "Rules:\n"
+        "- Be specific. No vague name-dropping without textual warrant.\n"
+        "- Prefer 'this recalls X because…' over 'you copied X'.\n"
+        "- If the sample is too thin, say what you need more of.\n"
+        "- Never shame the author for influence; frame everything as craft awareness.\n"
+        "- Use clear markdown headings and bullets."
+    ),
 }
 
 
@@ -428,6 +454,21 @@ class LLMService:
                 "**Offline lore lookup**\n\n"
                 f"Query: {prompt}\n"
                 f"Known characters: {char_hint or 'none'}\n"
+            )
+
+        if mode == "influence":
+            return (
+                "**Offline influence checklist**\n\n"
+                "With a model connected, GhostWriter maps stylistic and thematic resonances "
+                "in your manuscript — not as praise or blame, but as craft awareness.\n\n"
+                "Self-scan while offline:\n"
+                "- Which sentences could only be *yours*?\n"
+                "- Which beats feel like a genre template you love?\n"
+                "- Name three writers/films you reread or rewatch; hunt for their fingerprints "
+                "in diction, structure, or moral temperature.\n"
+                "- Where do you transform an influence instead of repeating it?\n\n"
+                f"Cast on file: {char_hint or 'none yet'}\n"
+                f"Your focus: {prompt or '(full manuscript fingerprint)'}\n"
             )
 
         return (
