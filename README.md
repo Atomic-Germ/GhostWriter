@@ -10,6 +10,7 @@ Intelligent writing companion for authors. GhostWriter keeps a living memory of 
 - **Story memory (RAG)** — chapters/characters/world notes chunked into ChromaDB
 - **AI assist modes** — Brainstorm · Continue · Consistency · Lore · Plot · Influence
 - **Influence Analyzer** — maps literary/thematic resonances with cited evidence (craft awareness, not judgment)
+- **Story map** — tension pulse, chapter mass, cast presence grid, arc lanes, story circle, co-presence links
 - **Local-first LLM** — any OpenAI-compatible API (llama.cpp server, Ollama, OpenAI, …)
 - **Offline fallbacks** — useful checklists when no model is running
 

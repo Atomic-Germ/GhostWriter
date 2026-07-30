@@ -6,6 +6,7 @@ import ChapterSidebar from "./ChapterSidebar";
 import CharacterPanel from "./CharacterPanel";
 import Editor from "./Editor";
 import StatusPill from "./StatusPill";
+import StoryMap from "./StoryMap";
 import WorldNotes from "./WorldNotes";
 
 function countWords(text) {
@@ -271,10 +272,11 @@ export default function Workspace({ projectId, health, onBack }) {
           }}
         />
 
-        <aside className="flex w-[380px] shrink-0 flex-col border-l border-panel-border bg-panel/60">
+        <aside className="flex w-[400px] shrink-0 flex-col border-l border-panel-border bg-panel/60">
           <div className="flex border-b border-panel-border">
             {[
               ["ai", "AI"],
+              ["map", "Map"],
               ["characters", "Cast"],
               ["world", "World"],
             ].map(([id, label]) => (
@@ -300,6 +302,14 @@ export default function Workspace({ projectId, health, onBack }) {
                 onIndex={handleIndex}
                 llmAvailable={!!health?.llm_available}
                 indexing={indexing}
+              />
+            )}
+            {rightTab === "map" && (
+              <StoryMap
+                chapters={chapters}
+                characters={characters}
+                activeChapterId={activeChapterId}
+                onSelectChapter={setActiveChapterId}
               />
             )}
             {rightTab === "characters" && (
