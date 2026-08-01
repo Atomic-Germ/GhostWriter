@@ -225,9 +225,9 @@ export default function AssistPanel({
             )}
           </p>
         )}
-        {loading && !thinking && !response && (
+        {loading && !response && (
           <p className="mb-3 font-mono text-[11px] text-accent animate-pulse">
-            Generating{modelName ? ` · ${modelName}` : "…"}
+            Reading{modelName ? ` · ${modelName}` : "…"}
           </p>
         )}
 
@@ -253,6 +253,11 @@ export default function AssistPanel({
 
         {displayText && (
           <>
+            {loading && response && (
+              <p className="mb-2 font-mono text-[11px] text-accent animate-pulse">
+                Generating…
+              </p>
+            )}
             <div className="prose-gw mb-3">
               <ReactMarkdown>{displayText}</ReactMarkdown>
               {loading && response && (
