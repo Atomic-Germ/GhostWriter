@@ -1,6 +1,9 @@
 """Export format smoke tests."""
 
+import re
 import sys
+import zipfile
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -62,6 +65,20 @@ def test_txt_export(sample_project):
     raw = export_project(sample_project, "txt").decode("utf-8")
     assert "Superposition" in raw
     assert "Chapter 1" in raw
+
+
+def test_docx_export_includes_chapter_content(sample_project):
+    data = export_project(sample_project, "docx")
+    assert data[:2] == b"PK"
+    zf = zipfile.ZipFile(BytesIO(data))
+    xml = zf.read("word/document.xml").decode("utf-8")
+    texts = re.findall(r"<w:t[^>]*>([^<]*)</w:t>", xml)
+    body = "".join(texts)
+    assert "Chapter 1" in texts
+    assert "Eddie thought" in body
+    assert "the guards advanced" in body.lower()
+    assert "(empty)" not in body
+    assert filename_for(sample_project, "docx") == "superposition.docx"
 
 
 def test_epub_is_zip(sample_project):

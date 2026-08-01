@@ -29,7 +29,7 @@ _SCENE_BREAK_RE = re.compile(
 
 def _paragraphs(text: str) -> list[str]:
     """Plain paragraph strings (no scene-break detection)."""
-    return [b for b, k in _novel_blocks(text) if k == "p"]
+    return [body for kind, body in _novel_blocks(text) if kind == "p"]
 
 
 def _novel_blocks(text: str) -> list[tuple[str, str]]:
