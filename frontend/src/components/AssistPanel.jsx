@@ -136,7 +136,7 @@ export default function AssistPanel({
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-panel-border px-3 py-2">
-        <span className="panel-title">GhostWriter AI</span>
+        <span className="panel-title">Arthur AI</span>
         <div className="flex items-center gap-2">
           <span
             className={`font-mono text-[10px] ${llmAvailable || lastLlm ? "text-emerald-400" : "text-ink-500"}`}

@@ -334,31 +334,18 @@ class StoryMemory:
             sections.append(f"## World Notes\n{notes}")
             sources.append("World Notes")
 
-        # Chapter bodies from disk (no vector DB required)
+        # Chapter bodies — every chapter is represented (no silent middle dropouts)
         chapters = sorted(project.chapters, key=lambda c: c.order)
         if chapters:
-            ch_parts: list[str] = []
-            budget = 8000
-            for ch in chapters:
-                body = (ch.content or "").strip()
-                if not body and not ch.summary:
-                    continue
-                block = f"### {ch.title}\n"
-                if ch.summary:
-                    block += f"Summary: {ch.summary}\n"
-                if body:
-                    # Prefer head+tail if long
-                    if len(body) > 2000:
-                        block += body[:1000] + "\n…\n" + body[-1000:]
-                    else:
-                        block += body
-                if len(block) > budget:
-                    break
-                ch_parts.append(block)
-                budget -= len(block)
-                sources.append(f"chapter: {ch.title}")
-            if ch_parts:
-                sections.append("## Manuscript\n" + "\n\n".join(ch_parts))
+            ms_block, ms_sources = self._pack_manuscript(
+                chapters,
+                query_text=query_text,
+                extra_text=extra_text,
+                budget=int(self.settings.manuscript_context_chars),
+            )
+            if ms_block:
+                sections.append(ms_block)
+                sources.extend(ms_sources)
 
         if use_vector:
             search_q = " ".join(filter(None, [query_text, extra_text[:500]]))
@@ -378,8 +365,146 @@ class StoryMemory:
 
         return "\n\n".join(sections), sources
 
+    @staticmethod
+    def _clip_chapter_body(body: str, limit: int) -> str:
+        """Fit body into limit chars, preferring head+tail when truncated."""
+        body = (body or "").strip()
+        if not body or limit <= 0:
+            return ""
+        if len(body) <= limit:
+            return body
+        if limit < 80:
+            return body[:limit] + "…"
+        # head / tail split with ellipsis
+        head = max(40, int(limit * 0.55))
+        tail = max(20, limit - head - 5)
+        return body[:head].rstrip() + "\n…\n" + body[-tail:].lstrip()
+
+    def _pack_manuscript(
+        self,
+        chapters: list,
+        *,
+        query_text: str = "",
+        extra_text: str = "",
+        budget: int = 28000,
+    ) -> tuple[str, list[str]]:
+        """
+        Pack all chapters into a context budget without skipping middles.
+
+        Always emits a full chapter index, then bodies with fair per-chapter
+        shares (active/recent chapters get a modest bonus).
+        """
+        n = len(chapters)
+        if n == 0:
+            return "", []
+
+        # Detect which chapter the user is sitting in (from draft excerpt)
+        active_idx = -1
+        extra = (extra_text or "").strip()
+        if extra:
+            best = 0
+            needle = extra[:120]
+            for i, ch in enumerate(chapters):
+                body = ch.content or ""
+                if needle and needle in body:
+                    active_idx = i
+                    break
+                # fallback: overlap score on last 400 chars
+                tail = body[-400:]
+                if tail and extra[-200:] in body:
+                    active_idx = i
+                    break
+                overlap = len(set(tail.split()) & set(extra.split()))
+                if overlap > best and overlap > 8:
+                    best = overlap
+                    active_idx = i
+
+        # --- Index (always complete) ---
+        index_lines = [
+            f"{i + 1}. {ch.title or f'Chapter {i + 1}'} "
+            f"({len((ch.content or '').split())} words"
+            f"{', has summary' if (ch.summary or '').strip() else ''})"
+            for i, ch in enumerate(chapters)
+        ]
+        index_block = (
+            "## Manuscript index (complete)\n"
+            + "\n".join(index_lines)
+            + "\n\n_All chapters exist. If a body below is shortened, it is "
+            "marked — never treat a missing body as a missing chapter._"
+        )
+
+        # --- Fair body budget ---
+        # Reserve room for index + wrappers
+        body_budget = max(4000, budget - len(index_block) - 64 * n)
+        # Weight: base 1.0, active 1.75, neighbors 1.25, last chapter 1.15
+        weights = [1.0] * n
+        for i in range(n):
+            if i == active_idx:
+                weights[i] = 1.75
+            elif active_idx >= 0 and abs(i - active_idx) == 1:
+                weights[i] = max(weights[i], 1.25)
+            if i == n - 1:
+                weights[i] = max(weights[i], 1.15)
+            # slight boost for query-term hits
+            q = (query_text or "").lower()
+            if q and len(q) > 3:
+                body_l = (chapters[i].content or "").lower()
+                hits = sum(1 for tok in q.split() if len(tok) > 3 and tok in body_l)
+                if hits:
+                    weights[i] += min(0.5, hits * 0.08)
+
+        wsum = sum(weights) or 1.0
+        # Minimum floor so no chapter is zeroed out when non-empty
+        floor = min(500, max(200, body_budget // (n * 3)))
+        shares = [max(floor, int(body_budget * (w / wsum))) for w in weights]
+        # Renormalize if floors blew the budget
+        total_shares = sum(shares)
+        if total_shares > body_budget:
+            scale = body_budget / total_shares
+            shares = [max(120, int(s * scale)) for s in shares]
+
+        sources: list[str] = []
+        parts: list[str] = [index_block]
+        for i, ch in enumerate(chapters):
+            title = ch.title or f"Chapter {i + 1}"
+            body = (ch.content or "").strip()
+            summary = (ch.summary or "").strip()
+            share = shares[i]
+
+            header = f"### {i + 1}. {title}"
+            if i == active_idx:
+                header += "  _(current)_"
+
+            chunks: list[str] = [header]
+            meta_used = 0
+            if summary:
+                s = summary if len(summary) <= 400 else summary[:400] + "…"
+                chunks.append(f"Summary: {s}")
+                meta_used += len(s) + 10
+
+            allow = max(0, share - meta_used)
+            if not body:
+                chunks.append("_(empty chapter)_")
+                flag = "empty"
+            elif len(body) <= allow:
+                chunks.append(body)
+                flag = "full"
+            else:
+                clipped = self._clip_chapter_body(body, allow)
+                chunks.append(clipped)
+                chunks.append(
+                    f"_[truncated — {len(body)} chars total; "
+                    f"showing ~{len(clipped)} for context budget]_"
+                )
+                flag = "truncated"
+
+            parts.append("\n".join(chunks))
+            sources.append(f"chapter: {title} ({flag})")
+
+        return "## Manuscript\n" + "\n\n".join(parts), sources
+
     def delete_project_collection(self, project_id: str) -> None:
-        if not _chroma_lock.acquire(timeout=5000.0):
+        if not _chroma_lock.acquire(timeout=5.0):
             return
         try:
             client = self.client

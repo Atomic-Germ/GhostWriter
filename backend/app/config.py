@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     rag_top_k: int = 5
     chunk_size: int = 500
     chunk_overlap: int = 80
+    # How much manuscript prose to pack into assist context (chars).
+    # All chapters are always listed; bodies are budgeted fairly across them.
+    manuscript_context_chars: int = 28000
     # Auto-index on save (safe with hash backend)
     auto_index: bool = True
 

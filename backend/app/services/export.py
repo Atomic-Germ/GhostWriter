@@ -22,12 +22,64 @@ def _sorted_chapters(project: Project):
     return sorted(project.chapters or [], key=lambda c: c.order)
 
 
+_SCENE_BREAK_RE = re.compile(
+    r"^(?:\*\s*\*\s*\*|\*\*\*|---|—{2,}|#{3,}|·\s*·\s*·)$"
+)
+
+
 def _paragraphs(text: str) -> list[str]:
+    """Plain paragraph strings (no scene-break detection)."""
+    return [b for b, k in _novel_blocks(text) if k == "p"]
+
+
+def _novel_blocks(text: str) -> list[tuple[str, str]]:
+    """
+    Split manuscript text into novel blocks.
+
+    Returns list of (kind, text) where kind is 'p' | 'break'.
+    Single newlines inside a paragraph become spaces (ebook-friendly).
+    """
     if not (text or "").strip():
         return []
-    # Split on blank lines; keep single newlines as soft breaks inside a block
-    blocks = re.split(r"\n\s*\n", text.strip())
-    return [b.strip() for b in blocks if b.strip()]
+    chunks = re.split(r"\n\s*\n", text.strip())
+    out: list[tuple[str, str]] = []
+    for raw in chunks:
+        block = raw.strip()
+        if not block:
+            continue
+        # Normalize internal newlines → spaces (avoids jagged ebook lines)
+        flat = re.sub(r"[ \t]*\n[ \t]*", " ", block)
+        flat = re.sub(r" {2,}", " ", flat).strip()
+        if _SCENE_BREAK_RE.match(flat):
+            out.append(("break", ""))
+        else:
+            out.append(("p", flat))
+    return out
+
+
+def _chapter_heading_parts(title: str, index: int) -> tuple[str, str | None]:
+    """
+    Split 'Chapter 3: The Bus' into (kicker, subtitle).
+    """
+    t = (title or f"Chapter {index}").strip()
+    m = re.match(
+        r"^(chapter\s+(\d+|[ivxlcdm]+))\s*[:.\-—–]\s*(.+)$",
+        t,
+        flags=re.I,
+    )
+    if m:
+        return m.group(1).strip(), m.group(3).strip()
+    m2 = re.match(r"^(chapter\s+(\d+|[ivxlcdm]+))$", t, flags=re.I)
+    if m2:
+        return m2.group(1).strip(), None
+    # Untitled-style: use Chapter N as kicker, title as subtitle
+    if not re.match(r"^chapter\b", t, flags=re.I):
+        return f"Chapter {index}", t
+    return t, None
+
+
+def _xhtml_escape_text(s: str) -> str:
+    return xml_escape(s, {"\"": "&quot;", "'": "&apos;"})
 
 
 def filename_for(project: Project, fmt: str) -> str:
@@ -133,35 +185,44 @@ def _to_text(project: Project) -> str:
     return "\n".join(parts).rstrip() + "\n"
 
 
+def _html_body_from_blocks(blocks: list[tuple[str, str]], *, first_nofirst: bool = True) -> str:
+    parts: list[str] = []
+    first_p = True
+    for kind, text in blocks:
+        if kind == "break":
+            parts.append('<p class="scenebreak">* * *</p>')
+            first_p = True
+            continue
+        cls = ' class="first"' if first_p and first_nofirst else ""
+        parts.append(f"<p{cls}>{html.escape(text)}</p>")
+        first_p = False
+    return "".join(parts) if parts else "<p class=\"first\"><em>(empty)</em></p>"
+
+
 def _to_html(project: Project) -> str:
     title = html.escape(project.title or "Untitled")
     meta_bits = []
     if project.premise:
-        meta_bits.append(f"<p class='premise'><em>{html.escape(project.premise)}</em></p>")
+        meta_bits.append(
+            f"<p class='premise'><em>{html.escape(project.premise)}</em></p>"
+        )
     if project.genre:
         meta_bits.append(f"<p class='genre'>{html.escape(project.genre)}</p>")
 
     chapters_html = []
     for i, ch in enumerate(_sorted_chapters(project), start=1):
-        ct = html.escape(ch.title or f"Chapter {i}")
-        paras = "".join(
-            f"<p>{html.escape(p).replace(chr(10), '<br/>')}</p>"
-            for p in _paragraphs(ch.content or "")
-        ) or "<p><em>(empty)</em></p>"
+        kicker, sub = _chapter_heading_parts(ch.title or f"Chapter {i}", i)
+        if sub:
+            head = (
+                f"<p class='ch-kicker'>{html.escape(kicker)}</p>"
+                f"<h2 class='ch-title'>{html.escape(sub)}</h2>"
+            )
+        else:
+            head = f"<h2 class='ch-title'>{html.escape(kicker)}</h2>"
+        body = _html_body_from_blocks(_novel_blocks(ch.content or ""))
         chapters_html.append(
-            f"<section class='chapter' id='ch-{i}'>\n"
-            f"<h2>{ct}</h2>\n{paras}\n</section>"
+            f"<section class='chapter' id='ch-{i}'>\n{head}\n{body}\n</section>"
         )
-
-    cast = ""
-    if project.characters:
-        items = "".join(
-            f"<li><strong>{html.escape(c.name)}</strong>"
-            + (f" — {html.escape(c.role)}" if c.role else "")
-            + "</li>"
-            for c in project.characters
-        )
-        cast = f"<section class='cast'><h2>Dramatis Personae</h2><ul>{items}</ul></section>"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -170,43 +231,54 @@ def _to_html(project: Project) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>{title}</title>
   <style>
-    :root {{ color-scheme: light dark; }}
+    @page {{ size: 5.5in 8.5in; margin: 0.75in 0.7in; }}
     body {{
-      max-width: 42rem; margin: 2rem auto; padding: 0 1.25rem 4rem;
-      font-family: "Literata", "Palatino Linotype", Palatino, Georgia, serif;
-      font-size: 1.125rem; line-height: 1.75; color: #1a1814;
-      background: #f7f4ec;
+      max-width: 32rem; margin: 2rem auto; padding: 0 1.25rem 4rem;
+      font-family: "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+      font-size: 12pt; line-height: 1.55; color: #1a1814;
+      background: #faf8f2;
+      hyphens: auto; -webkit-hyphens: auto;
     }}
-    @media (prefers-color-scheme: dark) {{
-      body {{ background: #16140f; color: #ebe8e0; }}
-      h1, h2 {{ color: #e8d5a3; }}
-      .meta {{ color: #9a8c74; }}
+    header.titlepage {{
+      min-height: 70vh; display: flex; flex-direction: column;
+      justify-content: center; align-items: center; text-align: center;
+      page-break-after: always;
     }}
-    h1 {{ font-weight: 600; font-size: 2rem; margin-bottom: 0.25rem; }}
-    h2 {{ font-weight: 600; font-size: 1.35rem; margin-top: 2.5rem;
-         page-break-before: always; break-before: page; }}
-    .chapter:first-of-type h2 {{ page-break-before: auto; break-before: auto; }}
-    .meta {{ color: #665b4a; font-size: 0.95rem; margin-bottom: 2rem; }}
-    .premise {{ font-size: 1.05rem; }}
-    p {{ margin: 0 0 1em; text-indent: 1.5em; }}
-    .chapter h2 + p, .cast p {{ text-indent: 0; }}
-    ul {{ padding-left: 1.25rem; }}
+    h1.title {{
+      font-weight: 600; font-size: 2rem; letter-spacing: 0.04em;
+      margin: 0 0 1.5rem; text-wrap: balance;
+    }}
+    .premise {{ font-style: italic; color: #4a4338; max-width: 22rem; }}
+    .genre {{ font-size: 0.85rem; letter-spacing: 0.12em; text-transform: uppercase;
+              color: #7a6f5c; margin-top: 2rem; }}
+    .chapter {{ page-break-before: always; }}
+    .chapter:first-of-type {{ page-break-before: auto; }}
+    .ch-kicker {{
+      text-align: center; text-indent: 0 !important; font-size: 0.8rem;
+      letter-spacing: 0.18em; text-transform: uppercase; color: #665b4a;
+      margin: 3rem 0 0.5rem;
+    }}
+    .ch-title {{
+      text-align: center; font-weight: 600; font-size: 1.35rem;
+      margin: 0 0 2.25rem; page-break-after: avoid;
+    }}
+    p {{ margin: 0; text-indent: 1.5em; text-align: justify; }}
+    p.first {{ text-indent: 0; margin-top: 0; }}
+    p.scenebreak {{
+      text-indent: 0; text-align: center; margin: 1.4em 0;
+      letter-spacing: 0.45em; color: #665b4a;
+    }}
     @media print {{
-      body {{ background: white; color: black; margin: 0; max-width: none; }}
-      h2 {{ page-break-before: always; }}
+      body {{ background: white; margin: 0; max-width: none; padding: 0; }}
     }}
   </style>
 </head>
 <body>
-  <header>
-    <h1>{title}</h1>
-    <div class="meta">{"".join(meta_bits)}</div>
+  <header class="titlepage">
+    <h1 class="title">{title}</h1>
+    {"".join(meta_bits)}
   </header>
-  {cast}
   {"".join(chapters_html)}
-  <footer class="meta" style="margin-top:3rem;font-size:0.8rem">
-    Exported from GhostWriter
-  </footer>
 </body>
 </html>
 """
@@ -254,15 +326,271 @@ def _to_docx(project: Project) -> bytes:
     return buf.getvalue()
 
 
+def _epub_css() -> str:
+    """Reflowable novel stylesheet — portrait-friendly, no fixed viewport."""
+    return """
+/* GhostWriter novel EPUB — reflowable, LTR, reader-controlled type size */
+@namespace epub "http://www.idpf.org/2007/ops";
+
+html {
+  /* Do not set a fixed width/height/viewport — that forces landscape oddities */
+  writing-mode: horizontal-tb;
+  direction: ltr;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
+  font-size: 1em;              /* respect reader default */
+  line-height: 1.5;
+  text-align: justify;
+  widows: 2;
+  orphans: 2;
+  hyphens: auto;
+  -epub-hyphens: auto;
+  -webkit-hyphens: auto;
+  adobe-hyphenate: auto;
+}
+
+/* Vertical rhythm via em so it scales with reader font size */
+p {
+  margin: 0;
+  padding: 0;
+  text-indent: 1.5em;
+  line-height: 1.5;
+}
+
+p.first {
+  text-indent: 0;
+}
+
+p.scenebreak {
+  text-indent: 0;
+  text-align: center;
+  margin: 1.25em 0 1.25em 0;
+  letter-spacing: 0.55em;
+  font-size: 0.95em;
+  page-break-inside: avoid;
+}
+
+/* —— Title page —— */
+body.titlepage {
+  text-align: center;
+  padding: 30% 1.2em 2em 1.2em;
+}
+
+body.titlepage h1 {
+  font-size: 1.85em;
+  font-weight: normal;
+  letter-spacing: 0.06em;
+  margin: 0 0 1.75em 0;
+  line-height: 1.25;
+  text-align: center;
+  page-break-after: avoid;
+}
+
+body.titlepage .premise {
+  font-style: italic;
+  font-size: 0.95em;
+  text-indent: 0;
+  text-align: center;
+  margin: 0.75em 1em 0 1em;
+  line-height: 1.45;
+}
+
+body.titlepage .genre {
+  font-style: normal;
+  font-size: 0.75em;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-indent: 0;
+  text-align: center;
+  margin-top: 2.5em;
+  opacity: 0.75;
+}
+
+body.titlepage .byline {
+  font-size: 0.9em;
+  text-indent: 0;
+  text-align: center;
+  margin-top: 3em;
+  letter-spacing: 0.04em;
+}
+
+/* —— Chapters —— */
+body.chapter {
+  padding: 0 0 1em 0;
+}
+
+.ch-open {
+  margin: 2.5em 0 2em 0;
+  text-align: center;
+  page-break-after: avoid;
+  -webkit-column-break-after: avoid;
+  break-after: avoid;
+}
+
+.ch-kicker {
+  display: block;
+  font-size: 0.8em;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  text-indent: 0;
+  text-align: center;
+  margin: 0 0 0.6em 0;
+  font-weight: normal;
+}
+
+.ch-title {
+  display: block;
+  font-size: 1.35em;
+  font-weight: normal;
+  letter-spacing: 0.03em;
+  text-indent: 0;
+  text-align: center;
+  margin: 0;
+  line-height: 1.3;
+}
+
+/* Body copy sits a beat after the opener */
+.ch-open + p {
+  margin-top: 0.25em;
+}
+
+/* TOC page */
+body.toc {
+  padding: 2em 1.2em;
+}
+body.toc h1 {
+  font-size: 1.2em;
+  font-weight: normal;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-align: center;
+  margin: 0 0 1.75em 0;
+}
+body.toc ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+body.toc li {
+  margin: 0 0 0.85em 0;
+  text-align: left;
+  line-height: 1.4;
+}
+body.toc a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* Cover (SVG wrapper page) */
+body.cover {
+  margin: 0;
+  padding: 0;
+  text-align: center;
+}
+body.cover svg {
+  width: 100%;
+  height: auto;
+  max-height: 100%;
+}
+""".strip()
+
+
+def _epub_wrap(title: str, body_class: str, body_inner: str, css_href: str = "style.css") -> str:
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN"
+  "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="application/xhtml+xml; charset=utf-8"/>
+  <title>{_xhtml_escape_text(title)}</title>
+  <link rel="stylesheet" type="text/css" href="{css_href}"/>
+</head>
+<body class="{body_class}">
+{body_inner}
+</body>
+</html>
+"""
+
+
+def _epub_body_from_blocks(blocks: list[tuple[str, str]]) -> str:
+    parts: list[str] = []
+    first_p = True
+    for kind, text in blocks:
+        if kind == "break":
+            parts.append('<p class="scenebreak">* * *</p>')
+            first_p = True
+            continue
+        cls = ' class="first"' if first_p else ""
+        parts.append(f"<p{cls}>{_xhtml_escape_text(text)}</p>")
+        first_p = False
+    return "\n".join(parts) if parts else '<p class="first"><em>(empty)</em></p>'
+
+
+def _epub_cover_svg(title: str, premise: str = "") -> str:
+    """Simple portrait cover — 2:3 ratio, dark paper + gold type."""
+    t = _xhtml_escape_text(title)
+    # Rough wrap for long titles
+    words = title.split()
+    lines: list[str] = []
+    cur = ""
+    for w in words:
+        trial = f"{cur} {w}".strip()
+        if len(trial) > 18 and cur:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = trial
+    if cur:
+        lines.append(cur)
+    if not lines:
+        lines = [title or "Untitled"]
+    lines = lines[:5]
+    start_y = 420 - (len(lines) - 1) * 28
+    text_nodes = []
+    for i, line in enumerate(lines):
+        text_nodes.append(
+            f'<text x="300" y="{start_y + i * 56}" text-anchor="middle" '
+            f'font-family="Georgia, serif" font-size="44" fill="#e8d5a3">{_xhtml_escape_text(line)}</text>'
+        )
+    sub = ""
+    if premise:
+        short = premise if len(premise) < 90 else premise[:87] + "…"
+        sub = (
+            f'<text x="300" y="620" text-anchor="middle" font-family="Georgia, serif" '
+            f'font-size="18" font-style="italic" fill="#b8ae9a">{_xhtml_escape_text(short)}</text>'
+        )
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900" version="1.1">
+  <rect width="600" height="900" fill="#16140f"/>
+  <rect x="28" y="28" width="544" height="844" fill="none" stroke="#c4a35a" stroke-width="2" opacity="0.55"/>
+  <rect x="40" y="40" width="520" height="820" fill="none" stroke="#c4a35a" stroke-width="0.75" opacity="0.3"/>
+  <line x1="120" y1="320" x2="480" y2="320" stroke="#c4a35a" stroke-width="1" opacity="0.4"/>
+  {"".join(text_nodes)}
+  <line x1="120" y1="560" x2="480" y2="560" stroke="#c4a35a" stroke-width="1" opacity="0.4"/>
+  {sub}
+  <text x="300" y="820" text-anchor="middle" font-family="Georgia, serif" font-size="14"
+        letter-spacing="4" fill="#7f725c">GHOSTWRITER</text>
+</svg>
+"""
+
+
 def _to_epub(project: Project) -> bytes:
-    """Minimal EPUB 2.0 via stdlib zip — no ebooklib required."""
+    """Novel-oriented reflowable EPUB 3.0 (with NCX) via stdlib zip."""
+    from datetime import datetime, timezone
+
     title = project.title or "Untitled"
-    book_id = f"ghostwriter-{_slug(title)}"
+    book_id = f"urn:ghostwriter:{_slug(title)}"
     chapters = _sorted_chapters(project)
+    lang = "en"
+    modified = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    first_chap_href = "chap_001.xhtml" if chapters else "title.xhtml"
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        # Uncompressed mimetype first (EPUB spec)
         zf.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)
         zf.writestr(
             "META-INF/container.xml",
@@ -275,119 +603,198 @@ def _to_epub(project: Project) -> bytes:
 """,
         )
 
+        zf.writestr("OEBPS/style.css", _epub_css() + "\n")
+        cover_svg = _epub_cover_svg(title, project.premise or project.description or "")
+        zf.writestr("OEBPS/cover.svg", cover_svg)
+
+        cover_inner = re.sub(r"<\?xml[^?]*\?>\s*", "", cover_svg)
+        zf.writestr(
+            "OEBPS/cover.xhtml",
+            _epub_wrap(f"Cover — {title}", "cover", cover_inner),
+        )
+
+        tp_bits = [f"  <h1>{_xhtml_escape_text(title)}</h1>"]
+        if project.premise:
+            tp_bits.append(
+                f'  <p class="premise">{_xhtml_escape_text(project.premise)}</p>'
+            )
+        if project.genre:
+            tp_bits.append(
+                f'  <p class="genre">{_xhtml_escape_text(project.genre)}</p>'
+            )
+        zf.writestr(
+            "OEBPS/title.xhtml",
+            _epub_wrap(title, "titlepage", "\n".join(tp_bits)),
+        )
+
+        toc_items = []
+        for i, ch in enumerate(chapters, start=1):
+            ct = ch.title or f"Chapter {i}"
+            toc_items.append(
+                f'    <li><a href="chap_{i:03d}.xhtml">{_xhtml_escape_text(ct)}</a></li>'
+            )
+        zf.writestr(
+            "OEBPS/toc.xhtml",
+            _epub_wrap(
+                "Contents",
+                "toc",
+                "  <h1>Contents</h1>\n  <ol>\n"
+                + ("\n".join(toc_items) if toc_items else "    <li><em>No chapters</em></li>")
+                + "\n  </ol>",
+            ),
+        )
+
         manifest_items = [
             '<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>',
+            '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>',
             '<item id="css" href="style.css" media-type="text/css"/>',
+            '<item id="cover-img" href="cover.svg" media-type="image/svg+xml" properties="cover-image"/>',
+            '<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>',
+            '<item id="title" href="title.xhtml" media-type="application/xhtml+xml"/>',
+            '<item id="tocpage" href="toc.xhtml" media-type="application/xhtml+xml"/>',
         ]
-        spine_items = []
-        nav_points = []
-
-        css = """
-body { font-family: Georgia, serif; line-height: 1.6; margin: 1em; }
-h1 { font-size: 1.6em; text-align: center; margin: 2em 0 1em; }
-h2 { font-size: 1.3em; margin: 1.5em 0 1em; page-break-before: always; }
-p { margin: 0 0 0.9em; text-indent: 1.2em; }
-h1 + p, h2 + p { text-indent: 0; }
-.premise { font-style: italic; text-align: center; text-indent: 0; }
-"""
-        zf.writestr("OEBPS/style.css", css.strip() + "\n")
-
-        # Title page
-        title_xhtml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN"
-  "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
-<head><title>{xml_escape(title)}</title>
-<link rel="stylesheet" type="text/css" href="style.css"/></head>
-<body>
-  <h1>{xml_escape(title)}</h1>
-  {f'<p class="premise">{xml_escape(project.premise)}</p>' if project.premise else ''}
-  {f'<p class="premise">{xml_escape(project.genre)}</p>' if project.genre else ''}
-</body></html>
-"""
-        zf.writestr("OEBPS/title.xhtml", title_xhtml)
-        manifest_items.append(
-            '<item id="title" href="title.xhtml" media-type="application/xhtml+xml"/>'
-        )
-        spine_items.append('<itemref idref="title"/>')
-        nav_points.append(
-            """<navPoint id="nav0" playOrder="1">
-  <navLabel><text>Title</text></navLabel>
+        spine_items = [
+            '<itemref idref="cover" linear="no"/>',
+            '<itemref idref="title"/>',
+            '<itemref idref="tocpage"/>',
+        ]
+        nav_points = [
+            """<navPoint id="nav-title" playOrder="1">
+  <navLabel><text>Title Page</text></navLabel>
   <content src="title.xhtml"/>
-</navPoint>"""
-        )
+</navPoint>""",
+            """<navPoint id="nav-toc" playOrder="2">
+  <navLabel><text>Contents</text></navLabel>
+  <content src="toc.xhtml"/>
+</navPoint>""",
+        ]
+        nav_ol = [
+            '      <li><a href="title.xhtml">Title Page</a></li>',
+            '      <li><a href="toc.xhtml">Contents</a></li>',
+        ]
+        play = 3
 
         for i, ch in enumerate(chapters, start=1):
             ct = ch.title or f"Chapter {i}"
-            paras = _paragraphs(ch.content or "")
-            body = (
-                "".join(
-                    f"<p>{xml_escape(p).replace(chr(10), '<br/>')}</p>" for p in paras
+            kicker, sub = _chapter_heading_parts(ct, i)
+            if sub:
+                opener = (
+                    f'  <div class="ch-open">\n'
+                    f'    <p class="ch-kicker">{_xhtml_escape_text(kicker)}</p>\n'
+                    f'    <h1 class="ch-title">{_xhtml_escape_text(sub)}</h1>\n'
+                    f"  </div>"
                 )
-                or "<p><em>(empty)</em></p>"
-            )
-            xhtml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN"
-  "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
-<head><title>{xml_escape(ct)}</title>
-<link rel="stylesheet" type="text/css" href="style.css"/></head>
-<body>
-  <h2>{xml_escape(ct)}</h2>
-  {body}
-</body></html>
-"""
+            else:
+                opener = (
+                    f'  <div class="ch-open">\n'
+                    f'    <h1 class="ch-title">{_xhtml_escape_text(kicker)}</h1>\n'
+                    f"  </div>"
+                )
+            body = _epub_body_from_blocks(_novel_blocks(ch.content or ""))
             href = f"chap_{i:03d}.xhtml"
-            zf.writestr(f"OEBPS/{href}", xhtml)
+            zf.writestr(
+                f"OEBPS/{href}",
+                _epub_wrap(ct, "chapter", opener + "\n" + body),
+            )
             mid = f"chap{i}"
             manifest_items.append(
                 f'<item id="{mid}" href="{href}" media-type="application/xhtml+xml"/>'
             )
             spine_items.append(f'<itemref idref="{mid}"/>')
             nav_points.append(
-                f"""<navPoint id="nav{i}" playOrder="{i + 1}">
-  <navLabel><text>{xml_escape(ct)}</text></navLabel>
+                f"""<navPoint id="nav{i}" playOrder="{play}">
+  <navLabel><text>{_xhtml_escape_text(ct)}</text></navLabel>
   <content src="{href}"/>
 </navPoint>"""
             )
+            nav_ol.append(
+                f'      <li><a href="{href}">{_xhtml_escape_text(ct)}</a></li>'
+            )
+            play += 1
 
-        opf = f"""<?xml version="1.0" encoding="UTF-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="2.0">
-  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"
-            xmlns:opf="http://www.idpf.org/2007/opf">
-    <dc:title>{xml_escape(title)}</dc:title>
-    <dc:language>en</dc:language>
-    <dc:identifier id="BookId">{xml_escape(book_id)}</dc:identifier>
+        zf.writestr(
+            "OEBPS/nav.xhtml",
+            f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="{lang}" lang="{lang}">
+<head>
+  <meta charset="utf-8"/>
+  <title>Navigation</title>
+  <link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+  <nav epub:type="toc" id="toc">
+    <h1>Contents</h1>
+    <ol>
+{chr(10).join(nav_ol)}
+    </ol>
+  </nav>
+  <nav epub:type="landmarks" id="landmarks" hidden="hidden">
+    <ol>
+      <li><a epub:type="cover" href="cover.xhtml">Cover</a></li>
+      <li><a epub:type="titlepage" href="title.xhtml">Title Page</a></li>
+      <li><a epub:type="toc" href="toc.xhtml">Contents</a></li>
+      <li><a epub:type="bodymatter" href="{first_chap_href}">Start</a></li>
+    </ol>
+  </nav>
+</body>
+</html>
+""",
+        )
+
+        desc = project.description or project.premise or ""
+        zf.writestr(
+            "OEBPS/content.opf",
+            f"""<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0"
+         prefix="rendition: http://www.idpf.org/vocab/rendition/#">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>{_xhtml_escape_text(title)}</dc:title>
+    <dc:language>{lang}</dc:language>
+    <dc:identifier id="BookId">{_xhtml_escape_text(book_id)}</dc:identifier>
     <dc:publisher>GhostWriter</dc:publisher>
-    {f'<dc:description>{xml_escape(project.description or project.premise or "")}</dc:description>' if (project.description or project.premise) else ''}
+    {f'<dc:description>{_xhtml_escape_text(desc)}</dc:description>' if desc else ''}
+    <meta name="cover" content="cover-img"/>
+    <meta property="rendition:layout">reflowable</meta>
+    <meta property="rendition:orientation">auto</meta>
+    <meta property="rendition:spread">none</meta>
+    <meta property="dcterms:modified">{modified}</meta>
   </metadata>
   <manifest>
-    {chr(10).join(manifest_items)}
+{chr(10).join("    " + m for m in manifest_items)}
   </manifest>
-  <spine toc="ncx">
-    {chr(10).join(spine_items)}
+  <spine toc="ncx" page-progression-direction="ltr">
+{chr(10).join("    " + s for s in spine_items)}
   </spine>
+  <guide>
+    <reference type="cover" title="Cover" href="cover.xhtml"/>
+    <reference type="title-page" title="Title Page" href="title.xhtml"/>
+    <reference type="toc" title="Contents" href="toc.xhtml"/>
+    <reference type="text" title="Start" href="{first_chap_href}"/>
+  </guide>
 </package>
-"""
-        zf.writestr("OEBPS/content.opf", opf)
+""",
+        )
 
-        ncx = f"""<?xml version="1.0" encoding="UTF-8"?>
+        zf.writestr(
+            "OEBPS/toc.ncx",
+            f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN"
   "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
   <head>
-    <meta name="dtb:uid" content="{xml_escape(book_id)}"/>
+    <meta name="dtb:uid" content="{_xhtml_escape_text(book_id)}"/>
     <meta name="dtb:depth" content="1"/>
     <meta name="dtb:totalPageCount" content="0"/>
     <meta name="dtb:maxPageNumber" content="0"/>
   </head>
-  <docTitle><text>{xml_escape(title)}</text></docTitle>
+  <docTitle><text>{_xhtml_escape_text(title)}</text></docTitle>
   <navMap>
-    {chr(10).join(nav_points)}
+{chr(10).join(nav_points)}
   </navMap>
 </ncx>
-"""
-        zf.writestr("OEBPS/toc.ncx", ncx)
+""",
+        )
 
     return buf.getvalue()
 
