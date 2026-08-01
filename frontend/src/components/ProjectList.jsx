@@ -6,6 +6,7 @@ export default function ProjectList({
   onOpen,
   onCreate,
   onDelete,
+  onFork,
 }) {
   const [form, setForm] = useState({
     title: "",
@@ -142,11 +143,22 @@ export default function ProjectList({
                 </button>
                 <button
                   type="button"
+                  className="btn-ghost border-l border-panel-border px-4 text-ink-500 hover:text-accent"
+                  title="Fork this draft"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onFork?.(p.id, p.title);
+                  }}
+                >
+                  Fork
+                </button>
+                <button
+                  type="button"
                   className="btn-ghost border-l border-panel-border px-4 text-ink-500 hover:text-red-300"
                   title="Delete project"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (confirm(`Delete “${p.title}”? This cannot be undone.`)) {
+                    if (confirm(`Delete "${p.title}"? This cannot be undone.`)) {
                       onDelete(p.id);
                     }
                   }}

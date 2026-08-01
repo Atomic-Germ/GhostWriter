@@ -168,6 +168,12 @@ export const api = {
       body: JSON.stringify({ world_notes }),
       timeoutMs: 15_000,
     }),
+  forkProject: (id, title) =>
+    request(`/projects/${id}/fork`, {
+      method: "POST",
+      body: JSON.stringify({ title }),
+      timeoutMs: 15_000,
+    }),
 
   listCharacters: (projectId) =>
     request(`/projects/${projectId}/characters`, { timeoutMs: 10_000 }),

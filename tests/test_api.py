@@ -122,3 +122,60 @@ def test_project_flow(client):
 
     r = client.delete(f"/api/projects/{pid}")
     assert r.status_code == 204
+
+
+def test_fork_project(client):
+    r = client.post(
+        "/api/projects",
+        json={"title": "Original", "genre": "Sci-Fi", "premise": "A forkable draft"},
+    )
+    assert r.status_code == 201
+    original = r.json()
+    pid = original["id"]
+
+    r = client.post(
+        f"/api/projects/{pid}/chapters",
+        json={"title": "Chapter 1", "content": "The original text.", "order": 0},
+    )
+    assert r.status_code == 201
+
+    r = client.post(f"/api/projects/{pid}/fork", json={"title": "Fork One"})
+    assert r.status_code == 201
+    fork = r.json()
+    assert fork["title"] == "Fork One"
+    assert fork["fork_of"] == pid
+    assert len(fork["chapters"]) == 1
+    assert fork["chapters"][0]["content"] == "The original text."
+    assert fork["id"] != pid
+
+    r = client.get("/api/projects")
+    all_projects = r.json()
+    assert any(p["id"] == fork["id"] for p in all_projects)
+    summary = next(p for p in all_projects if p["id"] == fork["id"])
+    assert summary["fork_of"] == pid
+
+    r = client.delete(f"/api/projects/{pid}")
+    assert r.status_code == 204
+    r = client.delete(f"/api/projects/{fork['id']}")
+    assert r.status_code == 204
+
+
+def test_fork_project_default_title(client):
+    r = client.post(
+        "/api/projects",
+        json={"title": "Base", "genre": "Fantasy"},
+    )
+    assert r.status_code == 201
+    original = r.json()
+    pid = original["id"]
+
+    r = client.post(f"/api/projects/{pid}/fork")
+    assert r.status_code == 201
+    fork = r.json()
+    assert fork["title"] == "Base (fork)"
+    assert fork["fork_of"] == pid
+
+    r = client.delete(f"/api/projects/{pid}")
+    assert r.status_code == 204
+    r = client.delete(f"/api/projects/{fork['id']}")
+    assert r.status_code == 204

@@ -18,10 +18,12 @@ export default function ChapterSidebar({
   onDelete,
   onBack,
   onExport,
+  onFork,
 }) {
   const totalWords = chapters.reduce((n, c) => n + (c.word_count || 0), 0);
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(null);
+  const [forking, setForking] = useState(false);
 
   async function handleExport(fmt) {
     if (!onExport || exporting) return;
@@ -124,6 +126,29 @@ export default function ChapterSidebar({
           </ul>
         )}
       </div>
+      {onFork && (
+        <div className="border-t border-panel-border p-2">
+          <button
+            type="button"
+            className="btn-ghost w-full justify-between border border-panel-border px-2.5 py-2 text-xs"
+            onClick={async () => {
+              if (!project?.id || forking) return;
+              setForking(true);
+              try {
+                await onFork(project.id);
+              } finally {
+                setForking(false);
+              }
+            }}
+            disabled={forking}
+          >
+            <span>Fork draft</span>
+            <span className="font-mono text-[10px] text-ink-500">
+              {forking ? "…" : "📋"}
+            </span>
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

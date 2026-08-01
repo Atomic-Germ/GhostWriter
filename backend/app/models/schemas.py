@@ -82,6 +82,7 @@ class ProjectBase(BaseModel):
     description: str = ""
     genre: str = ""
     premise: str = ""
+    fork_of: Optional[str] = None
 
 
 class ProjectCreate(ProjectBase):
@@ -109,6 +110,7 @@ class ProjectSummary(BaseModel):
     title: str
     description: str = ""
     genre: str = ""
+    fork_of: Optional[str] = None
     chapter_count: int = 0
     character_count: int = 0
     word_count: int = 0

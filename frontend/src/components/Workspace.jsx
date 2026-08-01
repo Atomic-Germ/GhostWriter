@@ -4,6 +4,7 @@ import { useDebouncedCallback } from "../hooks/useDebouncedCallback";
 import AssistPanel from "./AssistPanel";
 import ChapterSidebar from "./ChapterSidebar";
 import CharacterPanel from "./CharacterPanel";
+import DraftCompare from "./DraftCompare";
 import Editor from "./Editor";
 import StatusPill from "./StatusPill";
 import StoryMap from "./StoryMap";
@@ -13,7 +14,7 @@ function countWords(text) {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
 }
 
-export default function Workspace({ projectId, health, onBack }) {
+export default function Workspace({ projectId, health, onBack, onOpenProject }) {
   const [project, setProject] = useState(null);
   const [chapters, setChapters] = useState([]);
   const [characters, setCharacters] = useState([]);
@@ -23,6 +24,7 @@ export default function Workspace({ projectId, health, onBack }) {
   const [indexing, setIndexing] = useState(false);
   const [error, setError] = useState("");
   const [loadState, setLoadState] = useState("loading");
+  const [compareOpen, setCompareOpen] = useState(false);
   const saveGen = useRef(0);
   const latestContent = useRef({});
 
@@ -176,6 +178,20 @@ export default function Workspace({ projectId, health, onBack }) {
     }
   }
 
+  async function handleFork() {
+    try {
+      const forked = await api.forkProject(projectId);
+      setError("");
+      if (onOpenProject && forked?.id) {
+        onOpenProject(forked.id);
+      }
+      return forked;
+    } catch (err) {
+      setError(err.message || "Fork failed");
+      throw err;
+    }
+  }
+
   async function handleExport(format) {
     try {
       await api.downloadExport(projectId, format);
@@ -214,8 +230,38 @@ export default function Workspace({ projectId, health, onBack }) {
               {project.genre}
             </span>
           )}
+          {project?.fork_of && (
+            <span className="rounded-full border border-accent/30 px-2 py-0.5 font-mono text-[10px] text-accent">
+              fork
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="btn-ghost px-2 py-1 text-xs"
+            onClick={async () => {
+              try {
+                const forked = await handleFork();
+                if (forked) {
+                  setError("");
+                }
+              } catch {
+                /* error already set */
+              }
+            }}
+            title="Fork this draft to try a new version"
+          >
+            📋 Fork
+          </button>
+          <button
+            type="button"
+            className="btn-ghost px-2 py-1 text-xs"
+            onClick={() => setCompareOpen((v) => !v)}
+            title="Compare drafts side by side"
+          >
+            🔍 Compare
+          </button>
           <StatusPill label="API" ok title="Backend reachable" />
           <StatusPill
             label="LLM"
@@ -257,6 +303,7 @@ export default function Workspace({ projectId, health, onBack }) {
           onDelete={handleDeleteChapter}
           onBack={onBack}
           onExport={handleExport}
+          onFork={handleFork}
         />
 
         <Editor
@@ -289,6 +336,7 @@ export default function Workspace({ projectId, health, onBack }) {
               ["map", "Map"],
               ["characters", "Cast"],
               ["world", "World"],
+              ["drafts", "Drafts"],
             ].map(([id, label]) => (
               <button
                 key={id}
@@ -334,6 +382,12 @@ export default function Workspace({ projectId, health, onBack }) {
               <WorldNotes
                 notes={project?.world_notes || ""}
                 onSave={handleSaveWorld}
+              />
+            )}
+            {rightTab === "drafts" && (
+              <DraftCompare
+                projectId={projectId}
+                project={project}
               />
             )}
           </div>

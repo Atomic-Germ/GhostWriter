@@ -63,6 +63,13 @@ export default function App() {
     await refreshProjects();
   }
 
+  async function handleFork(id, title) {
+    const forked = await api.forkProject(id, title);
+    await refreshProjects();
+    setActiveProjectId(forked.id);
+    return forked;
+  }
+
   if (bootError && !activeProjectId) {
     return (
       <div className="flex h-full items-center justify-center p-8">
@@ -94,6 +101,7 @@ export default function App() {
             setActiveProjectId(null);
             refreshProjects();
           }}
+          onOpenProject={setActiveProjectId}
         />
       </div>
     );
@@ -107,6 +115,7 @@ export default function App() {
         onOpen={setActiveProjectId}
         onCreate={handleCreate}
         onDelete={handleDelete}
+        onFork={handleFork}
       />
     </div>
   );

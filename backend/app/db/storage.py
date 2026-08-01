@@ -94,6 +94,7 @@ class ProjectStore:
                             title=data.get("title", "Untitled"),
                             description=data.get("description", ""),
                             genre=data.get("genre", ""),
+                            fork_of=data.get("fork_of"),
                             chapter_count=len(chapters),
                             character_count=len(characters),
                             word_count=word_count,
@@ -145,6 +146,65 @@ class ProjectStore:
             project = self._load(project_id)
             project.world_notes = notes
             return self._save(project)
+
+    def fork_project(self, project_id: str, title_override: str | None = None) -> Project:
+        with _file_lock:
+            original = self._load(project_id)
+            new_title = title_override or f"{original.title} (fork)"
+            now = _now()
+            id_map: dict[str, str] = {}
+
+            def remap_id(obj_id: str) -> str:
+                if obj_id not in id_map:
+                    id_map[obj_id] = new_id()
+                return id_map[obj_id]
+
+            new_chars = [
+                Character(
+                    id=remap_id(c.id),
+                    name=c.name,
+                    role=c.role,
+                    physical_traits=c.physical_traits,
+                    personality=c.personality,
+                    motivations=c.motivations,
+                    speech_patterns=c.speech_patterns,
+                    backstory=c.backstory,
+                    notes=c.notes,
+                    relationships=c.relationships,
+                    created_at=now,
+                    updated_at=now,
+                )
+                for c in original.characters
+            ]
+
+            new_chapters = [
+                Chapter(
+                    id=remap_id(ch.id),
+                    title=ch.title,
+                    content=ch.content,
+                    order=ch.order,
+                    summary=ch.summary,
+                    word_count=ch.word_count,
+                    created_at=now,
+                    updated_at=now,
+                )
+                for ch in original.chapters
+            ]
+
+            forked = Project(
+                id=new_id(),
+                title=new_title,
+                description=original.description,
+                genre=original.genre,
+                premise=original.premise,
+                fork_of=original.id,
+                characters=new_chars,
+                chapters=new_chapters,
+                world_notes=original.world_notes,
+                created_at=now,
+                updated_at=now,
+            )
+            return self._save(forked)
 
     def list_characters(self, project_id: str) -> list[Character]:
         return self.get_project(project_id).characters
