@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     data_dir: Path = Field(default=_DEFAULT_DATA)
     projects_dir: Path | None = None
+    series_dir: Path | None = None
     chroma_dir: Path | None = None
 
     # LLM: OpenAI-compatible endpoint (llama.cpp server, Ollama, OpenAI, etc.)
@@ -56,12 +57,14 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _paths(self) -> "Settings":
         self.projects_dir = self.data_dir / "projects"
+        self.series_dir = self.data_dir / "series"
         self.chroma_dir = self.data_dir / "chroma"
         return self
 
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.projects_dir.mkdir(parents=True, exist_ok=True)
+        self.series_dir.mkdir(parents=True, exist_ok=True)
         self.chroma_dir.mkdir(parents=True, exist_ok=True)
 
 

@@ -21,7 +21,7 @@ from app.models.schemas import (
 
 @pytest.fixture
 def store(tmp_path):
-    return ProjectStore(base_dir=tmp_path)
+    return ProjectStore(base_dir=tmp_path, series_dir=tmp_path / "series")
 
 
 def test_project_crud(store):
@@ -128,3 +128,59 @@ def test_chapter_orders_repaired_on_load(store, tmp_path):
     # And the fix must persist to disk.
     data2 = _json.loads(path.read_text(encoding="utf-8"))
     assert [c["order"] for c in data2["chapters"]] == [0, 1, 2, 3]
+
+
+def test_series_bible_and_grouping(store, tmp_path):
+    from app.models.schemas import Character, ProjectSummary, SeriesBibleUpdate
+
+    a = store.create_project(
+        ProjectCreate(title="Book One", series="Twin Suns", series_position=1)
+    )
+    b = store.create_project(
+        ProjectCreate(title="Book Two", series="Twin Suns", series_position=2)
+    )
+    store.create_project(ProjectCreate(title="Solo"))
+
+    # Bible starts empty
+    bible = store.get_series_bible("Twin Suns")
+    assert bible.world_notes == ""
+    assert bible.characters == []
+
+    # Save world notes + cast
+    bible = store.update_series_bible(
+        "Twin Suns",
+        SeriesBibleUpdate(
+            world_notes="Two suns, tonal magic.",
+            characters=[
+                Character(name="Mira", role="Protagonist", relationships="Sister of Ona")
+            ],
+        ),
+    )
+    assert bible.world_notes == "Two suns, tonal magic."
+    assert bible.characters[0].name == "Mira"
+
+    # Re-read from disk
+    bible2 = store.get_series_bible("Twin Suns")
+    assert bible2.world_notes == "Two suns, tonal magic."
+    assert bible2.characters[0].name == "Mira"
+
+    # Summaries expose series + grouping works
+    summaries = store.list_projects()
+    series_map = {s.series: s for s in summaries}
+    assert series_map["Twin Suns"].id in (a.id, b.id)
+
+    info = store.list_series()
+    twin = next(s for s in info if s.name == "Twin Suns")
+    assert len(twin.books) == 2
+    assert twin.character_count == 1
+    assert twin.world_notes == "Two suns, tonal magic."
+
+    # Cross-book lookup
+    books = store.projects_in_series("Twin Suns")
+    assert {p.id for p in books} == {a.id, b.id}
+    assert books[0].series_position == 1
+
+    # Bible file lives under tmp_path (not the real data dir)
+    series_dir = tmp_path / "series"
+    assert series_dir.exists()
+    assert any(series_dir.glob("*.json"))

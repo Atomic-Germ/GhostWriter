@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import assist, chapters, characters, export, projects
+from app.api import assist, chapters, characters, export, projects, series
 from app.config import get_settings
 from app.models.schemas import HealthResponse
 from app.services.embeddings import get_status as embedding_status, is_embedding_ready
@@ -67,6 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(chapters.router, prefix="/api")
     app.include_router(export.router, prefix="/api")
     app.include_router(assist.router, prefix="/api")
+    app.include_router(series.router, prefix="/api")
 
     @app.get("/api/health", response_model=HealthResponse)
     async def health():

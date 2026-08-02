@@ -326,6 +326,13 @@ class StoryMemory:
             sections.append("## Characters\n" + "\n\n".join(char_blocks))
             sources.extend([f"Character: {c.name}" for c in project.characters])
 
+        # Shared series bible — worldbuilding/cast that spans every book
+        if project.series.strip():
+            bible_section, bible_sources = self.build_series_bible_section(project)
+            if bible_section:
+                sections.append(bible_section)
+                sources.extend(bible_sources)
+
         # Full world notes — primary source for lore questions
         if project.world_notes.strip():
             notes = project.world_notes.strip()
@@ -362,6 +369,95 @@ class StoryMemory:
                 sections.append(
                     "## Retrieved Story Memory\n" + "\n---\n".join(hit_texts)
                 )
+
+        return "\n\n".join(sections), sources
+
+    def build_series_bible_section(
+        self, project: Project
+    ) -> tuple[str, list[str]]:
+        """Shared series bible (worldbuilding doc + cross-book cast)."""
+        from app.db.storage import get_store
+
+        bible = get_store().get_series_bible(project.series.strip())
+        sections: list[str] = []
+        sources: list[str] = []
+
+        if bible.world_notes.strip():
+            notes = bible.world_notes.strip()
+            if len(notes) > 12000:
+                notes = notes[:12000] + "\n…[truncated]"
+            sections.append(
+                f"## Series Bible — {project.series.strip()}\n{notes}"
+            )
+            sources.append(f"Series Bible ({project.series.strip()})")
+
+        if bible.characters:
+            char_blocks = [self._character_doc(c) for c in bible.characters]
+            sections.append(
+                f"## Series Cast\n" + "\n\n".join(char_blocks)
+            )
+            sources.extend(
+                [f"Series Character: {c.name}" for c in bible.characters]
+            )
+
+        return "\n\n".join(sections), sources
+
+    def build_series_context(
+        self, project: Project, query_text: str
+    ) -> tuple[str, list[str]]:
+        """Cross-book context for the 'series' mode — worldbuilding + cast only.
+
+        Deliberately excludes chapter/plot content: this mode answers lore and
+        relationship questions across the whole series, not about any single
+        book's plot.
+        """
+        from app.db.storage import get_store
+
+        store = get_store()
+        sources: list[str] = []
+        sections: list[str] = []
+
+        meta_bits = [f"Series: {project.series.strip()}"]
+        if project.genre:
+            meta_bits.append(f"Genre: {project.genre}")
+        sections.append("## Series\n" + "\n".join(meta_bits))
+
+        bible_section, bible_sources = self.build_series_bible_section(project)
+        if bible_section:
+            sections.append(bible_section)
+            sources.extend(bible_sources)
+
+        books = store.projects_in_series(project.series.strip())
+        for book in books:
+            bits = [f"Book: {book.title}"]
+            if book.series_position:
+                bits.append(f"Series position: {book.series_position}")
+            if book.genre:
+                bits.append(f"Genre: {book.genre}")
+            if book.premise:
+                bits.append(f"Premise: {book.premise}")
+            if book.description:
+                bits.append(f"Description: {book.description}")
+            sections.append("## " + " | ".join(bits))
+            sources.append(f"Book: {book.title}")
+
+            if book.characters:
+                char_blocks = [self._character_doc(c) for c in book.characters]
+                sections.append(
+                    f"### Characters ({book.title})\n" + "\n\n".join(char_blocks)
+                )
+                sources.extend(
+                    [f"Character: {c.name} ({book.title})" for c in book.characters]
+                )
+
+            if book.world_notes.strip():
+                notes = book.world_notes.strip()
+                if len(notes) > 8000:
+                    notes = notes[:8000] + "\n…[truncated]"
+                sections.append(
+                    f"### World Notes ({book.title})\n{notes}"
+                )
+                sources.append(f"World Notes ({book.title})")
 
         return "\n\n".join(sections), sources
 

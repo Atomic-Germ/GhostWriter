@@ -119,8 +119,19 @@ export default function ProjectList({
           </button>
         </div>
       ) : (
-        <ul className="grid gap-3">
-          {projects.map((p) => (
+        (() => {
+          const standalone = [];
+          const groups = new Map();
+          for (const p of projects) {
+            const series = (p.series || "").trim();
+            if (series) {
+              if (!groups.has(series)) groups.set(series, []);
+              groups.get(series).push(p);
+            } else {
+              standalone.push(p);
+            }
+          }
+          const renderCard = (p) => (
             <li key={p.id}>
               <div className="card group flex items-stretch overflow-hidden transition hover:border-accent/30">
                 <button
@@ -167,8 +178,35 @@ export default function ProjectList({
                 </button>
               </div>
             </li>
-          ))}
-        </ul>
+          );
+          return (
+            <div className="space-y-8">
+              {[...groups.entries()].map(([series, books]) => (
+                <section key={series}>
+                  <div className="mb-2 flex items-center gap-2">
+                    <h3 className="panel-title !text-sm !text-accent">{series}</h3>
+                    <span className="font-mono text-[11px] text-ink-500">
+                      {books.length} {books.length === 1 ? "book" : "books"}
+                    </span>
+                    <div className="h-px flex-1 bg-panel-border" />
+                  </div>
+                  <ul className="grid gap-3">{books.map(renderCard)}</ul>
+                </section>
+              ))}
+              {standalone.length > 0 && (
+                <section>
+                  <div className="mb-2 flex items-center gap-2">
+                    <h3 className="panel-title !text-sm text-ink-300">
+                      Standalone
+                    </h3>
+                    <div className="h-px flex-1 bg-panel-border" />
+                  </div>
+                  <ul className="grid gap-3">{standalone.map(renderCard)}</ul>
+                </section>
+              )}
+            </div>
+          );
+        })()
       )}
     </div>
   );

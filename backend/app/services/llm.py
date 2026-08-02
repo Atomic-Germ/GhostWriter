@@ -38,6 +38,20 @@ MODE_SYSTEM_PROMPTS = {
         "story's established lore, world notes, and characters. Infer carefully from "
         "what is written; label speculation clearly. If something is unknown, say so."
     ),
+    "series": (
+        "You are GhostWriter, the keeper of a shared story universe. Your job is to "
+        "keep worldbuilding and character relationships consistent ACROSS an entire "
+        "series of books — an anthology where the books share a world but are not a "
+        "single linear plot.\n\n"
+        "You deliberately work from the series bible, world notes, and cast of every "
+        "book, and you stay effectively ignorant of plot: never speculate about what "
+        "happens in a specific book's story, only about the world and the people in it.\n\n"
+        "You can: answer lore questions, flag contradictions in world rules, geography, "
+        "history, or character relationships between books; propose how a new character "
+        "or concept could fit the established universe; suggest relationship dynamics "
+        "between characters across books; and help expand the bible consistently. "
+        "Label speculation clearly and say so when something is unknown."
+    ),
     "plot": (
         "You are GhostWriter, a narrative structure analyst. Evaluate plot threads, "
         "pacing, unresolved hooks, and arc structure. Identify potential plot holes "
@@ -454,6 +468,16 @@ class LLMService:
                 "**Offline lore lookup**\n\n"
                 f"Query: {prompt}\n"
                 f"Known characters: {char_hint or 'none'}\n"
+            )
+
+        if mode == "series":
+            return (
+                "**Offline series check**\n\n"
+                f"Question: {prompt}\n"
+                "With an LLM connected, GhostWriter cross-checks the whole series — "
+                "worldbuilding, lore, and character relationships across every book — "
+                "while ignoring plot.\n\n"
+                f"Cast on file: {char_hint or 'none yet'}\n"
             )
 
         if mode == "influence":

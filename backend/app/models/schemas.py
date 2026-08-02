@@ -126,10 +126,33 @@ class ProjectSummary(BaseModel):
     description: str = ""
     genre: str = ""
     fork_of: Optional[str] = None
+    series: str = ""
     chapter_count: int = 0
     character_count: int = 0
     word_count: int = 0
     updated_at: str = ""
+
+
+# ── Series ─────────────────────────────────────────────────
+
+class SeriesBible(BaseModel):
+    """Shared worldbuilding doc + cross-book cast for a series name."""
+    name: str
+    world_notes: str = ""
+    characters: list[Character] = Field(default_factory=list)
+    updated_at: str = Field(default_factory=_now)
+
+
+class SeriesBibleUpdate(BaseModel):
+    world_notes: Optional[str] = None
+    characters: Optional[list[Character]] = None
+
+
+class SeriesInfo(BaseModel):
+    name: str
+    books: list[ProjectSummary] = Field(default_factory=list)
+    world_notes: str = ""
+    character_count: int = 0
 
 
 # ── AI / Assist ─────────────────────────────────────────────

@@ -21,6 +21,9 @@ from app.models.schemas import (
     ProjectCreate,
     ProjectSummary,
     ProjectUpdate,
+    SeriesBible,
+    SeriesBibleUpdate,
+    SeriesInfo,
     new_id,
 )
 
@@ -36,10 +39,16 @@ def _word_count(text: str) -> int:
 
 
 class ProjectStore:
-    def __init__(self, base_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        base_dir: Optional[Path] = None,
+        series_dir: Optional[Path] = None,
+    ):
         settings = get_settings()
         self.base_dir = base_dir or settings.projects_dir
+        self.series_dir = series_dir or settings.series_dir
         self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.series_dir.mkdir(parents=True, exist_ok=True)
 
     def _path(self, project_id: str) -> Path:
         return self.base_dir / f"{project_id}.json"
@@ -115,6 +124,7 @@ class ProjectStore:
                             description=data.get("description", ""),
                             genre=data.get("genre", ""),
                             fork_of=data.get("fork_of"),
+                            series=data.get("series", ""),
                             chapter_count=len(chapters),
                             character_count=len(characters),
                             word_count=word_count,
@@ -346,6 +356,87 @@ class ProjectStore:
                 raise FileNotFoundError(f"Chapter {chapter_id} not found")
             self._renumber_chapters(project)
             self._save(project)
+
+    # ── Series ─────────────────────────────────────────────
+
+    def _series_path(self, name: str) -> Path:
+        safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in name).lower()
+        safe = safe.strip("-") or "untitled-series"
+        return self.series_dir / f"{safe}.json"
+
+    def list_series(self) -> list[SeriesInfo]:
+        """Group projects by their series name; returns summaries + bible info."""
+        with _file_lock:
+            summaries = self.list_projects()
+            grouped: dict[str, list[ProjectSummary]] = {}
+            for s in summaries:
+                if s.series.strip():
+                    grouped.setdefault(s.series.strip(), []).append(s)
+            out: list[SeriesInfo] = []
+            for name, books in sorted(grouped.items(), key=lambda kv: kv[0].lower()):
+                bible = self._load_series_bible(name)
+                out.append(
+                    SeriesInfo(
+                        name=name,
+                        books=sorted(books, key=lambda b: b.title.lower()),
+                        world_notes=bible.world_notes if bible else "",
+                        character_count=len(bible.characters) if bible else 0,
+                    )
+                )
+            return out
+
+    def _load_series_bible(self, name: str) -> Optional[SeriesBible]:
+        path = self._series_path(name)
+        if not path.exists():
+            return None
+        try:
+            return SeriesBible.model_validate_json(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, KeyError, OSError):
+            return None
+
+    def get_series_bible(self, name: str) -> SeriesBible:
+        bible = self._load_series_bible(name)
+        if bible is None:
+            return SeriesBible(name=name)
+        return bible
+
+    def update_series_bible(self, name: str, payload: SeriesBibleUpdate) -> SeriesBible:
+        with _file_lock:
+            bible = self._load_series_bible(name) or SeriesBible(name=name)
+            if payload.world_notes is not None:
+                bible.world_notes = payload.world_notes
+            if payload.characters is not None:
+                bible.characters = payload.characters
+            bible.updated_at = _now()
+            path = self._series_path(name)
+            tmp = path.with_name(f".{path.stem}.{os.getpid()}.{new_id()[:8]}.tmp")
+            try:
+                tmp.write_text(bible.model_dump_json(indent=2) + "\n", encoding="utf-8")
+                os.replace(tmp, path)
+            finally:
+                if tmp.exists():
+                    try:
+                        tmp.unlink()
+                    except OSError:
+                        pass
+            return bible
+
+    def projects_in_series(self, name: str) -> list[Project]:
+        """Full project objects for every book sharing this series name."""
+        with _file_lock:
+            projects: list[Project] = []
+            for path in sorted(self.base_dir.glob("*.json")):
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    continue
+                if (data.get("series") or "").strip() == name:
+                    try:
+                        projects.append(Project.model_validate(data))
+                    except (KeyError, ValueError):
+                        continue
+            projects.sort(key=lambda p: (p.series_position, p.title.lower()))
+            return projects
 
 
 _store: Optional[ProjectStore] = None

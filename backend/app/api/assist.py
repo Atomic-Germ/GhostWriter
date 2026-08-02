@@ -43,13 +43,21 @@ async def _prepare_context(payload: AssistRequest) -> tuple[str, list[str], str,
         except FileNotFoundError:
             pass
 
-    context, sources = await asyncio.to_thread(
-        memory.build_context_block,
-        project,
-        payload.prompt,
-        context_text,
-        False,
-    )
+    if payload.mode == "series" and project.series.strip():
+        # Cross-book universe context — worldbuilding + cast, no plot
+        context, sources = await asyncio.to_thread(
+            memory.build_series_context,
+            project,
+            payload.prompt,
+        )
+    else:
+        context, sources = await asyncio.to_thread(
+            memory.build_context_block,
+            project,
+            payload.prompt,
+            context_text,
+            False,
+        )
     available = await llm.check_available()
     return context, sources, context_text, available
 

@@ -7,12 +7,29 @@ import ChapterSidebar from "./ChapterSidebar";
 import CharacterPanel from "./CharacterPanel";
 import DraftCompare from "./DraftCompare";
 import Editor from "./Editor";
+import SeriesPanel from "./SeriesPanel";
 import StatusPill from "./StatusPill";
 import StoryMap from "./StoryMap";
 import WorldNotes from "./WorldNotes";
 
 function countWords(text) {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
+}
+
+function TabButton({ id, label, active, onSelect }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(id)}
+      className={`flex-1 py-2.5 text-xs font-medium transition ${
+        active === id
+          ? "border-b-2 border-accent text-accent-glow"
+          : "text-ink-500 hover:text-ink-200"
+      }`}
+    >
+      {label}
+    </button>
+  );
 }
 
 export default function Workspace({ projectId, health, onBack, onOpenProject }) {
@@ -33,6 +50,27 @@ export default function Workspace({ projectId, health, onBack, onOpenProject }) 
     () => chapters.find((c) => c.id === activeChapterId) || null,
     [chapters, activeChapterId]
   );
+
+  const tabs = useMemo(() => {
+    const base = [
+      ["ai", "Arthur"],
+      ["map", "Map"],
+      ["characters", "Cast"],
+      ["world", "World"],
+      ["author", "Author"],
+      ["drafts", "Drafts"],
+    ];
+    if (project?.series?.trim()) {
+      return [...base.slice(0, 4), ["series", "Series"], ...base.slice(4)];
+    }
+    return base;
+  }, [project]);
+
+  useEffect(() => {
+    if (rightTab === "series" && !project?.series?.trim()) {
+      setRightTab("world");
+    }
+  }, [project, rightTab]);
 
   const load = useCallback(async () => {
     setLoadState("loading");
@@ -337,26 +375,8 @@ export default function Workspace({ projectId, health, onBack, onOpenProject }) 
 
         <aside className="flex w-[400px] shrink-0 flex-col border-l border-panel-border bg-panel/60">
           <div className="flex border-b border-panel-border">
-            {[
-              ["ai", "Arthur"],
-              ["map", "Map"],
-              ["characters", "Cast"],
-              ["world", "World"],
-              ["author", "Author"],
-              ["drafts", "Drafts"],
-            ].map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setRightTab(id)}
-                className={`flex-1 py-2.5 text-xs font-medium transition ${
-                  rightTab === id
-                    ? "border-b-2 border-accent text-accent-glow"
-                    : "text-ink-500 hover:text-ink-200"
-                }`}
-              >
-                {label}
-              </button>
+            {tabs.map(([id, label]) => (
+              <TabButton key={id} id={id} label={label} active={rightTab} onSelect={setRightTab} />
             ))}
           </div>
           <div className="min-h-0 flex-1">
@@ -389,6 +409,12 @@ export default function Workspace({ projectId, health, onBack, onOpenProject }) 
               <WorldNotes
                 notes={project?.world_notes || ""}
                 onSave={handleSaveWorld}
+              />
+            )}
+            {rightTab === "series" && project?.series?.trim() && (
+              <SeriesPanel
+                seriesName={project.series.trim()}
+                onOpenProject={onOpenProject}
               />
             )}
             {rightTab === "author" && (

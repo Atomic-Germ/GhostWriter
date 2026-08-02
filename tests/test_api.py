@@ -179,3 +179,73 @@ def test_fork_project_default_title(client):
     assert r.status_code == 204
     r = client.delete(f"/api/projects/{fork['id']}")
     assert r.status_code == 204
+
+
+def test_series_flow(client):
+    # Two books in one series, one standalone
+    r = client.post(
+        "/api/projects",
+        json={"title": "Book One", "series": "Twin Suns", "series_position": 1},
+    )
+    assert r.status_code == 201
+    book1 = r.json()
+
+    r = client.post(
+        "/api/projects",
+        json={"title": "Book Two", "series": "Twin Suns", "series_position": 2},
+    )
+    assert r.status_code == 201
+    book2 = r.json()
+
+    r = client.post("/api/projects", json={"title": "Standalone"})
+    assert r.status_code == 201
+    solo = r.json()
+
+    # Series bible save + fetch
+    r = client.put(
+        "/api/series/Twin Suns/bible",
+        json={
+            "world_notes": "Two suns rise over a tonal-magic world.",
+            "characters": [
+                {"name": "Mira", "role": "Protagonist", "relationships": "Sister of Ona"}
+            ],
+        },
+    )
+    assert r.status_code == 200
+    bible = r.json()
+    assert bible["name"] == "Twin Suns"
+    assert bible["characters"][0]["name"] == "Mira"
+
+    r = client.get("/api/series/Twin Suns/bible")
+    assert r.status_code == 200
+    assert r.json()["world_notes"] == "Two suns rise over a tonal-magic world."
+
+    # Listing groups books under the series
+    r = client.get("/api/series")
+    assert r.status_code == 200
+    series_list = r.json()
+    twin = next(s for s in series_list if s["name"] == "Twin Suns")
+    assert len(twin["books"]) == 2
+    assert twin["character_count"] == 1
+
+    # Project summaries expose series
+    r = client.get("/api/projects")
+    summaries = r.json()
+    summary = next(s for s in summaries if s["id"] == book1["id"])
+    assert summary["series"] == "Twin Suns"
+
+    # Assist in series mode works offline and reaches context builder
+    r = client.post(
+        "/api/assist",
+        json={
+            "project_id": book1["id"],
+            "mode": "series",
+            "prompt": "What do we know about Mira?",
+        },
+    )
+    assert r.status_code == 200
+    assert "response" in r.json()
+
+    for pid in (book1["id"], book2["id"], solo["id"]):
+        r = client.delete(f"/api/projects/{pid}")
+        assert r.status_code == 204

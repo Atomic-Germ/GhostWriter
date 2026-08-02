@@ -6,6 +6,7 @@ const MODES = [
   { id: "continue", label: "Continue" },
   { id: "consistency", label: "Consistency" },
   { id: "lore", label: "Lore" },
+  { id: "series", label: "Series" },
   { id: "plot", label: "Plot" },
   { id: "influence", label: "Influence" },
 ];
@@ -15,6 +16,8 @@ const PLACEHOLDERS = {
   continue: "Continue from the cursor in the same voice…",
   consistency: "Check this scene against character profiles…",
   lore: "What do we know about the capital's magic laws?",
+  series:
+    "Ask about the whole universe — lore, world rules, or relationships between characters across books…",
   plot: "Are there unresolved threads from chapter 1?",
   influence:
     "Optional focus — e.g. diction only, Eddie’s voice, or “am I leaning too hard on PKD?”",
@@ -24,6 +27,8 @@ const DEFAULT_PROMPTS = {
   continue: "Continue the scene from where the draft leaves off.",
   consistency:
     "Analyze the current draft excerpt for contradictions with character profiles and established lore.",
+  series:
+    "Survey the whole series: flag any contradictions in worldbuilding or character relationships between books, and suggest how the universe could grow consistently.",
   influence:
     "Map the literary, cinematic, and philosophical influences audible in this manuscript. " +
     "Treat influence as creative DNA — neither good nor bad. Cite specific passages as evidence, " +
@@ -64,6 +69,7 @@ export default function AssistPanel({
       !prompt.trim() &&
       mode !== "continue" &&
       mode !== "consistency" &&
+      mode !== "series" &&
       mode !== "influence"
     ) {
       return;
@@ -216,6 +222,15 @@ export default function AssistPanel({
                 Maps stylistic and thematic resonances in your manuscript — not as
                 praise or blame, but as craft awareness. Empty prompt runs a full
                 fingerprint; add a focus to narrow the lens.
+              </>
+            ) : mode === "series" ? (
+              <>
+                <span className="mb-2 block font-serif text-sm text-ink-300">
+                  Series universe
+                </span>
+                Draws on the series bible, plus every book's world notes and cast —
+                ignoring plot — to keep worldbuilding and relationships consistent
+                across the anthology.
               </>
             ) : (
               <>

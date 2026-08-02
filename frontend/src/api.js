@@ -175,6 +175,16 @@ export const api = {
       timeoutMs: 15_000,
     }),
 
+  listSeries: () => request("/series", { timeoutMs: 10_000 }),
+  getSeriesBible: (name) =>
+    request(`/series/${encodeURIComponent(name)}/bible`, { timeoutMs: 10_000 }),
+  updateSeriesBible: (name, body) =>
+    request(`/series/${encodeURIComponent(name)}/bible`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+      timeoutMs: 15_000,
+    }),
+
   listCharacters: (projectId) =>
     request(`/projects/${projectId}/characters`, { timeoutMs: 10_000 }),
   createCharacter: (projectId, body) =>
