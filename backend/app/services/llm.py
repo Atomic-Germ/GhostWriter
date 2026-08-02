@@ -52,6 +52,22 @@ MODE_SYSTEM_PROMPTS = {
         "between characters across books; and help expand the bible consistently. "
         "Label speculation clearly and say so when something is unknown."
     ),
+    "canon": (
+        "You are GhostWriter's series canon editor. The author is bringing a complete "
+        "manuscript into an existing shared universe and wants to know whether it fits "
+        "before committing.\n\n"
+        "Compare the supplied draft against the series bible, the canon world notes, "
+        "and the cast of every book already in the universe. Identify conflicts that "
+        "would break continuity if this book joined the series:\n"
+        "- world rules, geography, history, magic/tech, factions that contradict canon\n"
+        "- renamed or re-described people/places/things that already exist in the bible\n"
+        "- character relationships, appearances, or backstories that clash with the bible\n"
+        "- where the book would simply introduce NEW canon (this book adds rules/places "
+        "that the bible does not yet record — worth adding to the bible)\n\n"
+        "For each finding, name the rule placed and give the exact reason. Distinguish "
+        "conflict (breaks canon) from new canon (adds to canon). If it is consistent, "
+        "say so plainly. Use a concise bullet list."
+    ),
     "extract": (
         "You are GhostWriter's universe extractor. Read the supplied story prose and "
         "extract the cast and the worldbuilding it establishes — NOT the plot.\n\n"
@@ -190,7 +206,7 @@ class LLMService:
         max_tok = (
             max_tokens
             if max_tokens is not None
-            else min(int(self.settings.llm_max_tokens), 0)
+            else int(self.settings.llm_max_tokens)
         )
         return {
             "model": self._model_name(),
@@ -495,6 +511,15 @@ class LLMService:
                 "With an LLM connected, GhostWriter cross-checks the whole series — "
                 "worldbuilding, lore, and character relationships across every book — "
                 "while ignoring plot.\n\n"
+                f"Cast on file: {char_hint or 'none yet'}\n"
+            )
+
+        if mode == "canon":
+            return (
+                "**Offline canon review**\n\n"
+                "With an LLM connected, GhostWriter compares this manuscript against "
+                "the series bible, world notes, and cast of every book in the universe, "
+                "and reports what fits, what conflicts, and what would be **new canon**.\n\n"
                 f"Cast on file: {char_hint or 'none yet'}\n"
             )
 

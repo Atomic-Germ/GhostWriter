@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useDebouncedCallback } from "../hooks/useDebouncedCallback";
 import CharacterPanel from "./CharacterPanel";
@@ -26,6 +26,10 @@ export default function SeriesPanel({
 
   const [extracting, setExtracting] = useState(false);
   const [extractResult, setExtractResult] = useState(null);
+
+  const [canonRunning, setCanonRunning] = useState(false);
+  const [canonText, setCanonText] = useState("");
+  const canonAbort = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -215,6 +219,56 @@ export default function SeriesPanel({
     }));
   }
 
+  async function handleCanonCheck() {
+    const controller = new AbortController();
+    canonAbort.current = controller;
+    setCanonRunning(true);
+    setCanonText("");
+    setError("");
+    try {
+      await api.assistStream(
+        {
+          project_id: projectId,
+          mode: "canon",
+          prompt:
+            "Does this manuscript fit the established canon? Flag world-rule/geography/history " +
+            "contradictions, renamed things already in the bible, and relationship clashes. " +
+            "End with a clear line: CONSISTENT, or a list of conflicts + what would be new canon.",
+        },
+        {
+          signal: controller.signal,
+          onMeta: (meta) => {
+            if (meta?.llm_available === false) {
+              setCanonText(
+                "**No LLM connected.** Connect a local model to compare this book against " +
+                  "the universe's canon."
+              );
+              controller.abort();
+            }
+          },
+          onToken: (token, full) => setCanonText(full),
+          onDone: () => setCanonRunning(false),
+          onError: (err) => {
+            setError(err.message || "Canon check failed");
+            setCanonRunning(false);
+          },
+        }
+      );
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        setError(err.message || "Canon check failed");
+      }
+      setCanonRunning(false);
+    } finally {
+      if (canonAbort.current === controller) canonAbort.current = null;
+    }
+  }
+
+  function handleStopCanon() {
+    canonAbort.current?.abort();
+    setCanonRunning(false);
+  }
+
   if (loadState === "loading") {
     return (
       <div className="flex h-full items-center justify-center text-sm text-ink-400">
@@ -283,7 +337,7 @@ export default function SeriesPanel({
         >
           Import this book's cast
         </button>
-        <button
+<button
           type="button"
           className="btn-ghost px-2 py-1 text-xs"
           onClick={handleExtract}
@@ -291,6 +345,14 @@ export default function SeriesPanel({
           title="Ask the model to read this book and propose characters + world facts (you review before adding)"
         >
           {extracting ? "Reading book…" : "Extract from story"}
+        </button>
+        <button
+          type="button"
+          className="btn-ghost px-2 py-1 text-xs"
+          onClick={canonRunning ? handleStopCanon : handleCanonCheck}
+          title="Compare this manuscript against the series bible + every other book's cast/world to catch canon conflicts before committing it"
+        >
+          {canonRunning ? "Stop" : "Canon check"}
         </button>
       </div>
 
@@ -300,6 +362,52 @@ export default function SeriesPanel({
           <button type="button" className="ml-2 underline" onClick={() => setError("")}>
             dismiss
           </button>
+        </div>
+      )}
+
+      {canonRunning && (
+        <div className="flex items-center gap-2 border-b border-panel-border px-3 py-2">
+          <span className="text-xs text-ink-300">Checking this book against canon…</span>
+          <button
+            type="button"
+            className="underline text-[11px] text-ink-500 hover:text-red-300"
+            onClick={handleStopCanon}
+          >
+            stop
+          </button>
+        </div>
+      )}
+
+      {canonText && !extractResult && (
+        <div className="min-h-0 flex-1 overflow-y-auto border-b border-panel-border bg-ink-950/40 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="panel-title">Canon review</span>
+            <div className="flex gap-1.5">
+              {canonRunning && (
+                <button
+                  type="button"
+                  className="btn-ghost px-2 py-1 text-xs"
+                  onClick={handleStopCanon}
+                >
+                  Stop
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn-ghost px-2 py-1 text-xs"
+                onClick={() => { setCanonText(""); setExtractResult(null); }}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+          <p className="mb-2 text-[11px] text-ink-500">
+            This checks the manuscript against the series bible and every other book's
+            cast and world notes. Imperfect — verify anything it flags before acting.
+          </p>
+          <pre className="whitespace-pre-wrap text-xs leading-relaxed text-ink-200">
+            {canonText}
+          </pre>
         </div>
       )}
 

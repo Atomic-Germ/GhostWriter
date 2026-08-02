@@ -5,6 +5,7 @@ import Workspace from "./components/Workspace";
 
 export default function App() {
   const [projects, setProjects] = useState([]);
+  const [seriesList, setSeriesList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [health, setHealth] = useState(null);
@@ -13,6 +14,7 @@ export default function App() {
   const refreshProjects = useCallback(async () => {
     const list = await api.listProjects();
     setProjects(list);
+    setSeriesList(await api.listSeries().then((s) => s.map((x) => x.name)));
   }, []);
 
   useEffect(() => {
@@ -96,6 +98,7 @@ export default function App() {
       <div className="h-full">
         <Workspace
           projectId={activeProjectId}
+          seriesList={seriesList}
           health={health}
           onBack={() => {
             setActiveProjectId(null);
@@ -111,6 +114,7 @@ export default function App() {
     <div className="h-full overflow-y-auto">
       <ProjectList
         projects={projects}
+        seriesList={seriesList}
         loading={loading}
         onOpen={setActiveProjectId}
         onCreate={handleCreate}

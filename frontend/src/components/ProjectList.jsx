@@ -2,6 +2,7 @@ import { useState } from "react";
 
 export default function ProjectList({
   projects,
+  seriesList = [],
   loading,
   onOpen,
   onCreate,
@@ -13,6 +14,7 @@ export default function ProjectList({
     genre: "",
     description: "",
     premise: "",
+    series: "",
   });
   const [showForm, setShowForm] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -23,7 +25,7 @@ export default function ProjectList({
     setCreating(true);
     try {
       await onCreate(form);
-      setForm({ title: "", genre: "", description: "", premise: "" });
+      setForm({ title: "", genre: "", description: "", premise: "", series: "" });
       setShowForm(false);
     } finally {
       setCreating(false);
@@ -96,6 +98,33 @@ export default function ProjectList({
               onChange={(e) => setForm({ ...form, description: e.target.value })}
               placeholder="What is this book about?"
             />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label">
+              Series <span className="font-normal text-ink-500">(optional)</span>
+            </label>
+            <input
+              className="input"
+              list="ghostwriter-series-list"
+              value={form.series}
+              onChange={(e) => setForm({ ...form, series: e.target.value })}
+              placeholder={
+                seriesList.length
+                  ? "Pick an existing series or type a new one"
+                  : "e.g. The Drowned Chronicles"
+              }
+            />
+            <datalist id="ghostwriter-series-list">
+              {seriesList.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
+            {form.series.trim() && seriesList.includes(form.series.trim()) && (
+              <p className="mt-1 text-[11px] text-accent/80">
+                New book in the “{form.series.trim()}” universe — you can import
+                its cast after opening.
+              </p>
+            )}
           </div>
           <div className="sm:col-span-2 flex justify-end">
             <button type="submit" className="btn-primary" disabled={creating}>

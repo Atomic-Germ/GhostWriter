@@ -50,6 +50,12 @@ async def _prepare_context(payload: AssistRequest) -> tuple[str, list[str], str,
             project,
             payload.prompt,
         )
+    elif payload.mode == "canon" and project.series.strip():
+        # Universe + this book's full draft — judge fit before committing
+        context, sources = await asyncio.to_thread(
+            memory.build_canon_context,
+            project,
+        )
     else:
         context, sources = await asyncio.to_thread(
             memory.build_context_block,

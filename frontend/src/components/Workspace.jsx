@@ -32,7 +32,13 @@ function TabButton({ id, label, active, onSelect }) {
   );
 }
 
-export default function Workspace({ projectId, health, onBack, onOpenProject }) {
+export default function Workspace({
+  projectId,
+  seriesList = [],
+  health,
+  onBack,
+  onOpenProject,
+}) {
   const [project, setProject] = useState(null);
   const [chapters, setChapters] = useState([]);
   const [characters, setCharacters] = useState([]);
@@ -175,6 +181,15 @@ export default function Workspace({ projectId, health, onBack, onOpenProject }) 
   async function handleSaveAuthor(patch) {
     const p = await api.updateProject(projectId, patch);
     setProject(p);
+  }
+
+  async function handleChangeSeries(series) {
+    const p = await api.updateProject(projectId, {
+      series: (series || "").trim(),
+      series_position: series ? project?.series_position : undefined,
+    });
+    setProject(p);
+    return p;
   }
 
   async function handleAssistStream({ mode, prompt }, handlers) {
@@ -408,7 +423,10 @@ export default function Workspace({ projectId, health, onBack, onOpenProject }) 
             {rightTab === "world" && (
               <WorldNotes
                 notes={project?.world_notes || ""}
+                series={project?.series || ""}
+                seriesList={seriesList}
                 onSave={handleSaveWorld}
+                onChangeSeries={handleChangeSeries}
               />
             )}
             {rightTab === "series" && project?.series?.trim() && (

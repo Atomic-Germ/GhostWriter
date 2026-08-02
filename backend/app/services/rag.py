@@ -461,6 +461,41 @@ class StoryMemory:
 
         return "\n\n".join(sections), sources
 
+    def build_canon_context(
+        self, project: Project
+    ) -> tuple[str, list[str]]:
+        """Context for the 'canon' mode — the universe (bible + every other book's
+        cast/world) plus THIS book's full draft, so the model can judge whether the
+        manuscript belongs in the canon before the author commits it.
+        """
+        from app.db.storage import get_store
+
+        store = get_store()
+        sources: list[str] = []
+        sections: list[str] = []
+
+        universe_section, universe_sources = self.build_series_context(
+            project, "canon review"
+        )
+        if universe_section:
+            sections.append(universe_section)
+            sources.extend(universe_sources)
+
+        chapters = sorted(project.chapters, key=lambda c: c.order)
+        if chapters:
+            blocks = []
+            for idx, ch in enumerate(chapters, 1):
+                body = self._clip_chapter_body(ch.content or "", 9000)
+                if body:
+                    blocks.append(f"### Chapter {idx}: {ch.title}\n{body}")
+            if blocks:
+                sections.append(
+                    "## This Book's Draft\n" + "\n\n".join(blocks)
+                )
+                sources.append("This Book's Draft")
+
+        return "\n\n".join(sections), sources
+
     @staticmethod
     def _clip_chapter_body(body: str, limit: int) -> str:
         """Fit body into limit chars, preferring head+tail when truncated."""

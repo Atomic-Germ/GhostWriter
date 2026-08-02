@@ -248,6 +248,28 @@ def test_series_flow(client):
     )
     assert r.status_code == 200
     assert "response" in r.json()
+    body = r.json()
+    assert any("Twin Suns" in s for s in body.get("sources", []))
+
+    # Canon mode includes this book's draft + the universe (bible/books)
+    r = client.post(
+        f"/api/projects/{book1['id']}/chapters",
+        json={"title": "Chapter 1", "content": "Mira speaks with Ona."},
+    )
+    assert r.status_code == 201
+    r = client.post(
+        "/api/assist",
+        json={
+            "project_id": book1["id"],
+            "mode": "canon",
+            "prompt": "Does this fit the canon?",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    joined = " ".join(body.get("sources", []))
+    assert "Twin Suns" in joined
+    assert "This Book's Draft" in joined
 
     for pid in (book1["id"], book2["id"], solo["id"]):
         r = client.delete(f"/api/projects/{pid}")
