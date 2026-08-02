@@ -93,7 +93,15 @@ def filename_for(project: Project, fmt: str) -> str:
         "docx": "docx",
         "epub": "epub",
         "json": "json",
+        "manuscript-docx": "docx",
+        "manuscript-epub": "epub",
+        "cover-jpg": "jpg",
+        "cover-tiff": "tiff",
     }.get(fmt, fmt)
+    if fmt in ("manuscript-docx", "manuscript-epub"):
+        return f"{base}-manuscript.{ext}"
+    if fmt in ("cover-jpg", "cover-tiff"):
+        return f"{base}-cover.{ext}"
     return f"{base}.{ext}"
 
 
@@ -105,8 +113,12 @@ def media_type_for(fmt: str) -> str:
         "text": "text/plain; charset=utf-8",
         "html": "text/html; charset=utf-8",
         "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "manuscript-docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "epub": "application/epub+zip",
+        "manuscript-epub": "application/epub+zip",
         "json": "application/json; charset=utf-8",
+        "cover-jpg": "image/jpeg",
+        "cover-tiff": "image/tiff",
     }.get(fmt, "application/octet-stream")
 
 
@@ -120,8 +132,14 @@ def export_project(project: Project, fmt: str) -> bytes:
         return _to_html(project).encode("utf-8")
     if fmt == "docx":
         return _to_docx(project)
+    if fmt == "manuscript-docx":
+        return _to_docx_manuscript(project)
     if fmt == "epub":
         return _to_epub(project)
+    if fmt == "manuscript-epub":
+        return _to_epub_manuscript(project)
+    if fmt in ("cover-jpg", "cover-tiff"):
+        return _to_cover_image(project, fmt)
     if fmt == "json":
         return (
             json.dumps(project.model_dump(), indent=2, ensure_ascii=False) + "\n"
@@ -326,6 +344,202 @@ def _to_docx(project: Project) -> bytes:
     return buf.getvalue()
 
 
+def _story_chapters(project: Project) -> list[list[str]]:
+    """Chapter body paragraphs in reading order, per chapter, no titles."""
+    out: list[list[str]] = []
+    for ch in _sorted_chapters(project):
+        out.append(_paragraphs(ch.content or ""))
+    return out
+
+
+def _to_docx_manuscript(project: Project) -> bytes:
+    """Manuscript DOCX: story prose only, no titles, no front matter."""
+    try:
+        from docx import Document
+        from docx.shared import Pt
+    except ImportError as exc:
+        raise RuntimeError(
+            "python-docx is required for DOCX export. pip install python-docx"
+        ) from exc
+
+    doc = Document()
+    style = doc.styles["Normal"]
+    style.font.name = "Times New Roman"
+    style.font.size = Pt(12)
+    style.paragraph_format.first_line_indent = Pt(24)
+    style.paragraph_format.line_spacing = 2
+
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    chapters = _story_chapters(project)
+    for idx, paras in enumerate(chapters):
+        if idx > 0:
+            sep = doc.add_paragraph("* * *")
+            sep.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            sep.paragraph_format.first_line_indent = Pt(0)
+        for para in paras:
+            doc.add_paragraph(para.replace("\n", " "))
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def _manuscript_epub_css() -> str:
+    """Minimal stylesheet for the story-only manuscript EPUB."""
+    return """
+body {
+  margin: 0;
+  padding: 0;
+  font-family: "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  font-size: 1em;
+  line-height: 1.5;
+  text-align: justify;
+  widows: 2;
+  orphans: 2;
+  hyphens: auto;
+  -epub-hyphens: auto;
+  -webkit-hyphens: auto;
+}
+p {
+  margin: 0 0 2em 0;
+  padding: 0;
+  text-indent: 1.5em;
+  line-height: 1.5;
+}
+p.first {
+  text-indent: 0;
+}
+p.chapnum {
+  text-indent: 0;
+  text-align: center;
+  font-size: 1.6em;
+  margin: 0 0 2em 0;
+  page-break-before: always;
+  break-before: page;
+  -epub-page-break-before: always;
+}
+p.chapnum.first {
+  page-break-before: auto;
+  break-before: auto;
+  -epub-page-break-before: auto;
+}
+""".strip()
+
+
+def _to_epub_manuscript(project: Project) -> bytes:
+    """Manuscript EPUB: story prose only, single xhtml, no cover/TOC/copyright.
+
+    Still a valid EPUB 3.0 with a nav document, so it opens in any reader.
+    """
+    from datetime import datetime, timezone
+
+    title = project.title or "Untitled"
+    lang = (project.language or "en").strip() or "en"
+    book_id = f"urn:ghostwriter:{_slug(title)}-manuscript"
+    modified = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    chapters = _story_chapters(project)
+    body_parts: list[str] = []
+    for idx, paras in enumerate(chapters):
+        num = idx + 1
+        cls = ' class="chapnum first"' if idx == 0 else ' class="chapnum"'
+        body_parts.append(f"<p{cls}>{num}</p>")
+        first_p = True
+        for p in paras:
+            pcls = ' class="first"' if first_p else ""
+            body_parts.append(f"<p{pcls}>{_xhtml_escape_text(p)}</p>")
+            first_p = False
+    body_inner = "\n".join(body_parts)
+    if not body_inner:
+        body_inner = '<p class="first"><em>(empty)</em></p>'
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)
+        zf.writestr(
+            "META-INF/container.xml",
+            """<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>
+""",
+        )
+        zf.writestr("OEBPS/style.css", _manuscript_epub_css() + "\n")
+
+        zf.writestr(
+            "OEBPS/manuscript.xhtml",
+            _epub_wrap(title, "chapter", body_inner),
+        )
+        zf.writestr(
+            "OEBPS/nav.xhtml",
+            f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="{lang}" lang="{lang}">
+<head>
+  <meta charset="utf-8"/>
+  <title>Contents</title>
+  <link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+  <nav epub:type="toc" id="toc">
+    <ol>
+      <li><a href="manuscript.xhtml">{_xhtml_escape_text(title)}</a></li>
+    </ol>
+  </nav>
+</body>
+</html>
+""",
+        )
+        zf.writestr(
+            "OEBPS/content.opf",
+            f"""<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>{_xhtml_escape_text(title)}</dc:title>
+    <dc:language>{_xhtml_escape_text(lang)}</dc:language>
+    <dc:identifier id="BookId">{_xhtml_escape_text(book_id)}</dc:identifier>
+    <meta property="dcterms:modified">{modified}</meta>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="css" href="style.css" media-type="text/css"/>
+    <item id="manuscript" href="manuscript.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine page-progression-direction="ltr">
+    <itemref idref="manuscript"/>
+  </spine>
+</package>
+""",
+        )
+        zf.writestr(
+            "OEBPS/toc.ncx",
+            f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN"
+  "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head>
+    <meta name="dtb:uid" content="{_xhtml_escape_text(book_id)}"/>
+    <meta name="dtb:depth" content="1"/>
+    <meta name="dtb:totalPageCount" content="0"/>
+    <meta name="dtb:maxPageNumber" content="0"/>
+  </head>
+  <docTitle><text>{_xhtml_escape_text(title)}</text></docTitle>
+  <navMap>
+    <navPoint id="nav1" playOrder="1">
+      <navLabel><text>Manuscript</text></navLabel>
+      <content src="manuscript.xhtml"/>
+    </navPoint>
+  </navMap>
+</ncx>
+""",
+        )
+
+    return buf.getvalue()
+
+
 def _epub_css() -> str:
     """Reflowable novel stylesheet — portrait-friendly, no fixed viewport."""
     return """
@@ -496,6 +710,18 @@ body.cover svg {
   height: auto;
   max-height: 100%;
 }
+
+/* Copyright page */
+body.copy {
+  padding: 2em 1.2em;
+  text-align: left;
+}
+body.copy .copy-line {
+  text-indent: 0;
+  margin: 0 0 1em 0;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
 """.strip()
 
 
@@ -578,15 +804,140 @@ def _epub_cover_svg(title: str, premise: str = "") -> str:
 """
 
 
+def _cover_font(size: int, italic: bool = False):
+    """Load a serif TTF for cover rendering; fall back to default bitmap."""
+    from PIL import ImageFont
+
+    candidates = [
+        "/usr/share/fonts/truetype/liberation-serif-fonts/"
+        + ("LiberationSerif-Italic.ttf" if italic else "LiberationSerif-Regular.ttf"),
+        "/usr/share/fonts/truetype/liberation2/LiberationSerif-"
+        + ("Italic" if italic else "Regular") + ".ttf",
+        "/usr/share/fonts/google-noto-vf/NotoSerif"
+        + ("-Italic" if italic else "") + "[wght].ttf",
+    ]
+    for path in candidates:
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
+def _cover_wrap(title: str, width: int, font) -> list[str]:
+    """Greedy word wrap to fit the cover width (rough, letter-based)."""
+    words = (title or "Untitled").split()
+    lines: list[str] = []
+    cur = ""
+    for w in words:
+        trial = f"{cur} {w}".strip()
+        if font.getlength(trial) > width and cur:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = trial
+    if cur:
+        lines.append(cur)
+    if not lines:
+        lines = ["Untitled"]
+    # Shrink wrap so at most 5 lines
+    while len(lines) > 5:
+        last = lines.pop()
+        lines[-1] = f"{lines[-1]} {last}"
+    return lines
+
+
+def _to_cover_image(project: Project, fmt: str) -> bytes:
+    """Render a simple print cover (2:3) to JPG or TIFF via Pillow.
+
+    Matches the SVG cover look: dark paper, gold borders, serif title.
+    """
+    from PIL import Image, ImageDraw
+
+    width, height = 1800, 2700
+    bg = (22, 20, 15)          # #16140f dark paper
+    gold = (196, 163, 90)      # #c4a35a
+    cream = (232, 213, 163)    # #e8d5a3
+    muted = (184, 174, 154)    # #b8ae9a
+    footer = (127, 114, 92)    # #7f725c
+
+    title = project.title or "Untitled"
+    premise = project.premise or project.description or ""
+    author = project.author or ""
+
+    img = Image.new("RGB", (width, height), bg)
+    draw = ImageDraw.Draw(img)
+
+    # Borders
+    draw.rectangle([60, 60, width - 60, height - 60], outline=gold, width=6)
+    draw.rectangle([90, 90, width - 90, height - 90], outline=gold, width=2)
+
+    # Title
+    title_font = _cover_font(120)
+    lines = _cover_wrap(title, int(width * 0.72), title_font)
+    line_h = 150
+    block_h = line_h * len(lines)
+    start_y = (height // 2) - block_h // 2 - 120
+    for i, line in enumerate(lines):
+        bbox = draw.textbbox((0, 0), line, font=title_font)
+        x = (width - (bbox[2] - bbox[0])) / 2 - bbox[0]
+        draw.text((x, start_y + i * line_h), line, font=title_font, fill=cream)
+
+    # Rules above/below title
+    title_bottom = start_y + block_h
+    draw.line([width * 0.2, title_bottom + 90, width * 0.8, title_bottom + 90],
+              fill=gold, width=3)
+
+    # Premise (italic subtitle)
+    if premise:
+        sub = premise if len(premise) < 90 else premise[:87] + "…"
+        sub_font = _cover_font(52, italic=True)
+        bbox = draw.textbbox((0, 0), sub, font=sub_font)
+        x = (width - (bbox[2] - bbox[0])) / 2 - bbox[0]
+        draw.text((x, title_bottom + 150), sub, font=sub_font, fill=muted)
+
+    # Author line
+    if author:
+        auth_font = _cover_font(56)
+        bbox = draw.textbbox((0, 0), author, font=auth_font)
+        x = (width - (bbox[2] - bbox[0])) / 2 - bbox[0]
+        draw.text((x, height * 0.82), author, font=auth_font, fill=cream)
+
+    # Footer
+    footer_font = _cover_font(44)
+    label = "GHOSTWRITER"
+    spaced = " ".join(label)
+    bbox = draw.textbbox((0, 0), spaced, font=footer_font)
+    x = (width - (bbox[2] - bbox[0])) / 2 - bbox[0]
+    draw.text((x, height * 0.93), spaced, font=footer_font, fill=footer)
+
+    buf = io.BytesIO()
+    if fmt == "cover-tiff":
+        img.save(buf, format="TIFF", dpi=(300, 300))
+    else:
+        img.save(buf, format="JPEG", quality=92, dpi=(300, 300))
+    return buf.getvalue()
+
+
 def _to_epub(project: Project) -> bytes:
-    """Novel-oriented reflowable EPUB 3.0 (with NCX) via stdlib zip."""
+    """Novel-oriented reflowable EPUB 3.0 (with NCX) via stdlib zip.
+
+    Metadata is tuned for Amazon KDP: creator, publisher, rights (copyright),
+    ISBN as the identifier when present, series collection, and language.
+    """
     from datetime import datetime, timezone
 
     title = project.title or "Untitled"
-    book_id = f"urn:ghostwriter:{_slug(title)}"
+    author = project.author or ""
+    publisher = project.publisher or "GhostWriter"
+    lang = (project.language or "en").strip() or "en"
+    if project.isbn:
+        book_id = f"urn:isbn:{project.isbn}"
+    else:
+        book_id = f"urn:ghostwriter:{_slug(title)}"
     chapters = _sorted_chapters(project)
-    lang = "en"
     modified = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    copyright_year = datetime.now(timezone.utc).year
     first_chap_href = "chap_001.xhtml" if chapters else "title.xhtml"
 
     buf = io.BytesIO()
@@ -614,6 +965,10 @@ def _to_epub(project: Project) -> bytes:
         )
 
         tp_bits = [f"  <h1>{_xhtml_escape_text(title)}</h1>"]
+        if author:
+            tp_bits.append(
+                f'  <p class="byline">{_xhtml_escape_text(author)}</p>'
+            )
         if project.premise:
             tp_bits.append(
                 f'  <p class="premise">{_xhtml_escape_text(project.premise)}</p>'
@@ -625,6 +980,33 @@ def _to_epub(project: Project) -> bytes:
         zf.writestr(
             "OEBPS/title.xhtml",
             _epub_wrap(title, "titlepage", "\n".join(tp_bits)),
+        )
+
+        copyright_line = project.copyright or (
+            f"Copyright © {copyright_year} {author or title}"
+        )
+        rights_holder = project.copyright or ""
+        copy_bits = [
+            f'  <p class="copy-line">{_xhtml_escape_text(copyright_line)}</p>',
+            f'  <p class="copy-line">Published by {_xhtml_escape_text(publisher)}</p>',
+        ]
+        if project.isbn:
+            copy_bits.append(
+                f'  <p class="copy-line">ISBN: {_xhtml_escape_text(project.isbn)}</p>'
+            )
+        if project.series:
+            pos = f", Book {project.series_position}" if project.series_position else ""
+            copy_bits.append(
+                f'  <p class="copy-line">{_xhtml_escape_text(project.series)}{_xhtml_escape_text(pos)}</p>'
+            )
+        copy_bits.append(
+            '  <p class="copy-line">All rights reserved. No part of this publication may be '
+            "reproduced, distributed, or transmitted in any form or by any means without the "
+            "prior written permission of the publisher.</p>"
+        )
+        zf.writestr(
+            "OEBPS/copyright.xhtml",
+            _epub_wrap(f"Copyright — {title}", "copy", "\n".join(copy_bits)),
         )
 
         toc_items = []
@@ -651,11 +1033,13 @@ def _to_epub(project: Project) -> bytes:
             '<item id="cover-img" href="cover.svg" media-type="image/svg+xml" properties="cover-image"/>',
             '<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>',
             '<item id="title" href="title.xhtml" media-type="application/xhtml+xml"/>',
+            '<item id="copyright" href="copyright.xhtml" media-type="application/xhtml+xml"/>',
             '<item id="tocpage" href="toc.xhtml" media-type="application/xhtml+xml"/>',
         ]
         spine_items = [
             '<itemref idref="cover" linear="no"/>',
             '<itemref idref="title"/>',
+            '<itemref idref="copyright"/>',
             '<itemref idref="tocpage"/>',
         ]
         nav_points = [
@@ -663,16 +1047,21 @@ def _to_epub(project: Project) -> bytes:
   <navLabel><text>Title Page</text></navLabel>
   <content src="title.xhtml"/>
 </navPoint>""",
-            """<navPoint id="nav-toc" playOrder="2">
+            """<navPoint id="nav-copy" playOrder="2">
+  <navLabel><text>Copyright</text></navLabel>
+  <content src="copyright.xhtml"/>
+</navPoint>""",
+            """<navPoint id="nav-toc" playOrder="3">
   <navLabel><text>Contents</text></navLabel>
   <content src="toc.xhtml"/>
 </navPoint>""",
         ]
         nav_ol = [
             '      <li><a href="title.xhtml">Title Page</a></li>',
+            '      <li><a href="copyright.xhtml">Copyright</a></li>',
             '      <li><a href="toc.xhtml">Contents</a></li>',
         ]
-        play = 3
+        play = 4
 
         for i, ch in enumerate(chapters, start=1):
             ct = ch.title or f"Chapter {i}"
@@ -743,6 +1132,17 @@ def _to_epub(project: Project) -> bytes:
         )
 
         desc = project.description or project.premise or ""
+        series_meta = ""
+        if project.series:
+            series_meta = (
+                f'    <meta property="belongs-to-collection" id="crt-series">{_xhtml_escape_text(project.series)}</meta>\n'
+                '    <meta refines="#crt-series" property="collection-type">series</meta>\n'
+                + (
+                    f'    <meta refines="#crt-series" property="group-position">{int(project.series_position or 0)}</meta>\n'
+                    if project.series_position
+                    else ""
+                )
+            )
         zf.writestr(
             "OEBPS/content.opf",
             f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -750,16 +1150,19 @@ def _to_epub(project: Project) -> bytes:
          prefix="rendition: http://www.idpf.org/vocab/rendition/#">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:title>{_xhtml_escape_text(title)}</dc:title>
-    <dc:language>{lang}</dc:language>
+    {f'<dc:creator id="crt-author">{_xhtml_escape_text(author)}</dc:creator>' if author else ''}
+    <dc:language>{_xhtml_escape_text(lang)}</dc:language>
     <dc:identifier id="BookId">{_xhtml_escape_text(book_id)}</dc:identifier>
-    <dc:publisher>GhostWriter</dc:publisher>
+    <dc:publisher>{_xhtml_escape_text(publisher)}</dc:publisher>
+    {f'<dc:rights>{_xhtml_escape_text(copyright_line)}</dc:rights>' if copyright_line else ''}
+    <dc:date>{copyright_year}-01-01T00:00:00Z</dc:date>
     {f'<dc:description>{_xhtml_escape_text(desc)}</dc:description>' if desc else ''}
     <meta name="cover" content="cover-img"/>
     <meta property="rendition:layout">reflowable</meta>
     <meta property="rendition:orientation">auto</meta>
     <meta property="rendition:spread">none</meta>
     <meta property="dcterms:modified">{modified}</meta>
-  </metadata>
+{series_meta}  </metadata>
   <manifest>
 {chr(10).join("    " + m for m in manifest_items)}
   </manifest>
@@ -769,6 +1172,7 @@ def _to_epub(project: Project) -> bytes:
   <guide>
     <reference type="cover" title="Cover" href="cover.xhtml"/>
     <reference type="title-page" title="Title Page" href="title.xhtml"/>
+    <reference type="copyright-page" title="Copyright" href="copyright.xhtml"/>
     <reference type="toc" title="Contents" href="toc.xhtml"/>
     <reference type="text" title="Start" href="{first_chap_href}"/>
   </guide>
@@ -799,4 +1203,15 @@ def _to_epub(project: Project) -> bytes:
     return buf.getvalue()
 
 
-SUPPORTED_FORMATS = ("markdown", "txt", "html", "docx", "epub", "json")
+SUPPORTED_FORMATS = (
+    "markdown",
+    "txt",
+    "html",
+    "docx",
+    "epub",
+    "json",
+    "manuscript-docx",
+    "manuscript-epub",
+    "cover-jpg",
+    "cover-tiff",
+)

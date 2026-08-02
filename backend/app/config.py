@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://127.0.0.1:8080/v1"
     llm_api_key: str = "not-needed"
     llm_model: str = "local-model"
-    llm_max_tokens: int = 32000
+    llm_max_tokens: int = 320000
     llm_temperature: float = 0.3
 
     # Embeddings: "hash" (default, fast, no torch) or "st" (sentence-transformers)
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     chunk_overlap: int = 80
     # How much manuscript prose to pack into assist context (chars).
     # All chapters are always listed; bodies are budgeted fairly across them.
-    manuscript_context_chars: int = 28000
+    manuscript_context_chars: int = 128000
     # Auto-index on save (safe with hash backend)
     auto_index: bool = True
 

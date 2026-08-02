@@ -58,7 +58,27 @@ class ProjectStore:
                 json.dumps(data, indent=2, ensure_ascii=False) + "\n",
                 encoding="utf-8",
             )
-        return Project.model_validate(data)
+        project = Project.model_validate(data)
+        if self._renumber_chapters(project):
+            self._save(project)
+        return project
+
+    @staticmethod
+    def _renumber_chapters(project: Project) -> bool:
+        """Keep chapter.order == list position (0..n-1).
+
+        The chapters list is always kept in display order (append on add,
+        filter on delete), so renumbering by list position repairs the
+        drift that otherwise accumulates when chapters are deleted — which
+        previously made later chapters sort into earlier positions.
+        Returns True if any order was changed.
+        """
+        changed = False
+        for i, ch in enumerate(project.chapters):
+            if ch.order != i:
+                ch.order = i
+                changed = True
+        return changed
 
     def _save(self, project: Project) -> Project:
         project.updated_at = _now()
@@ -118,6 +138,13 @@ class ProjectStore:
                 description=payload.description,
                 genre=payload.genre,
                 premise=payload.premise,
+                author=payload.author,
+                publisher=payload.publisher,
+                copyright=payload.copyright,
+                isbn=payload.isbn,
+                series=payload.series,
+                series_position=payload.series_position,
+                language=payload.language,
                 characters=[],
                 chapters=[],
                 world_notes="",
@@ -198,6 +225,13 @@ class ProjectStore:
                 genre=original.genre,
                 premise=original.premise,
                 fork_of=original.id,
+                author=original.author,
+                publisher=original.publisher,
+                copyright=original.copyright,
+                isbn=original.isbn,
+                series=original.series,
+                series_position=original.series_position,
+                language=original.language,
                 characters=new_chars,
                 chapters=new_chapters,
                 world_notes=original.world_notes,
@@ -280,6 +314,7 @@ class ProjectStore:
                 updated_at=_now(),
             )
             project.chapters.append(chapter)
+            self._renumber_chapters(project)
             self._save(project)
             return chapter
 
@@ -309,6 +344,7 @@ class ProjectStore:
             project.chapters = [c for c in project.chapters if c.id != chapter_id]
             if len(project.chapters) == before:
                 raise FileNotFoundError(f"Chapter {chapter_id} not found")
+            self._renumber_chapters(project)
             self._save(project)
 
 

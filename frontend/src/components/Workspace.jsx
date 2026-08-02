@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { useDebouncedCallback } from "../hooks/useDebouncedCallback";
 import AssistPanel from "./AssistPanel";
+import AuthorPanel from "./AuthorPanel";
 import ChapterSidebar from "./ChapterSidebar";
 import CharacterPanel from "./CharacterPanel";
 import DraftCompare from "./DraftCompare";
@@ -130,6 +131,11 @@ export default function Workspace({ projectId, health, onBack, onOpenProject }) 
 
   async function handleSaveWorld(notes) {
     const p = await api.updateWorldNotes(projectId, notes);
+    setProject(p);
+  }
+
+  async function handleSaveAuthor(patch) {
+    const p = await api.updateProject(projectId, patch);
     setProject(p);
   }
 
@@ -332,10 +338,11 @@ export default function Workspace({ projectId, health, onBack, onOpenProject }) 
         <aside className="flex w-[400px] shrink-0 flex-col border-l border-panel-border bg-panel/60">
           <div className="flex border-b border-panel-border">
             {[
-              ["ai", "AI"],
+              ["ai", "Arthur"],
               ["map", "Map"],
               ["characters", "Cast"],
               ["world", "World"],
+              ["author", "Author"],
               ["drafts", "Drafts"],
             ].map(([id, label]) => (
               <button
@@ -383,6 +390,9 @@ export default function Workspace({ projectId, health, onBack, onOpenProject }) 
                 notes={project?.world_notes || ""}
                 onSave={handleSaveWorld}
               />
+            )}
+            {rightTab === "author" && (
+              <AuthorPanel project={project} onSave={handleSaveAuthor} />
             )}
             {rightTab === "drafts" && (
               <DraftCompare

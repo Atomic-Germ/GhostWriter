@@ -3,8 +3,12 @@ import { useState } from "react";
 const EXPORTS = [
   { id: "markdown", label: "Markdown (.md)" },
   { id: "docx", label: "Word (.docx)" },
+  { id: "manuscript-docx", label: "Manuscript (.docx, prose only)" },
   { id: "epub", label: "EPUB ebook" },
+  { id: "manuscript-epub", label: "Manuscript (.epub, prose only)" },
   { id: "html", label: "HTML (print)" },
+  { id: "cover-jpg", label: "Cover image (.jpg)" },
+  { id: "cover-tiff", label: "Cover image (.tiff)" },
   { id: "txt", label: "Plain text" },
   { id: "json", label: "Full backup (.json)" },
 ];

@@ -79,3 +79,52 @@ def test_world_notes(store):
     p = store.create_project(ProjectCreate(title="World"))
     p2 = store.update_world_notes(p.id, "Magic costs memory.")
     assert p2.world_notes == "Magic costs memory."
+
+
+def test_chapter_orders_renumbered_after_delete(store):
+    p = store.create_project(ProjectCreate(title="Orders"))
+    ids = []
+    for i in range(5):
+        ch = store.add_chapter(
+            p.id, ChapterCreate(title=f"Chapter {i + 1}", content="x", order=i)
+        )
+        ids.append(ch.id)
+
+    # Delete the middle chapter — remaining orders must stay contiguous.
+    store.delete_chapter(p.id, ids[2])
+    p2 = store.get_project(p.id)
+    assert [c.order for c in p2.chapters] == [0, 1, 2, 3]
+
+    # Adding a chapter must land at the end (order = len), not collide.
+    new = store.add_chapter(
+        p.id, ChapterCreate(title="Last", content="y", order=99)
+    )
+    assert new.order == 4
+    p3 = store.get_project(p.id)
+    assert [c.order for c in p3.chapters] == [0, 1, 2, 3, 4]
+    assert p3.chapters[-1].title == "Last"
+
+
+def test_chapter_orders_repaired_on_load(store, tmp_path):
+    p = store.create_project(ProjectCreate(title="Repair"))
+    for i in range(4):
+        store.add_chapter(
+            p.id, ChapterCreate(title=f"Chapter {i + 1}", content="x", order=i)
+        )
+
+    # Corrupt orders on disk directly (simulates the old stale-order bug).
+    path = tmp_path / f"{p.id}.json"
+    import json as _json
+
+    data = _json.loads(path.read_text(encoding="utf-8"))
+    data["chapters"] = sorted(data["chapters"], key=lambda c: c["order"])
+    data["chapters"][3]["order"] = 2  # duplicate/out-of-place order
+    path.write_text(_json.dumps(data), encoding="utf-8")
+
+    # Loading the project must repair orders to 0..n-1.
+    p2 = store.get_project(p.id)
+    assert [c.order for c in p2.chapters] == [0, 1, 2, 3]
+
+    # And the fix must persist to disk.
+    data2 = _json.loads(path.read_text(encoding="utf-8"))
+    assert [c["order"] for c in data2["chapters"]] == [0, 1, 2, 3]

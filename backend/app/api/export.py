@@ -85,10 +85,34 @@ def list_export_formats(project_id: str):
                 "description": "For editors and collaborators",
             },
             {
+                "id": "manuscript-docx",
+                "label": "Manuscript (DOCX)",
+                "ext": "docx",
+                "description": "Story prose only, no titles or front matter",
+            },
+            {
                 "id": "epub",
                 "label": "EPUB",
                 "ext": "epub",
                 "description": "E-reader ebook",
+            },
+            {
+                "id": "manuscript-epub",
+                "label": "Manuscript (EPUB)",
+                "ext": "epub",
+                "description": "Story prose only, no titles or front matter",
+            },
+            {
+                "id": "cover-jpg",
+                "label": "Cover (JPG)",
+                "ext": "jpg",
+                "description": "2:3 print cover image, 300 DPI",
+            },
+            {
+                "id": "cover-tiff",
+                "label": "Cover (TIFF)",
+                "ext": "tiff",
+                "description": "2:3 print cover image, 300 DPI",
             },
             {
                 "id": "json",

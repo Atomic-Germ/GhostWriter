@@ -83,6 +83,13 @@ class ProjectBase(BaseModel):
     genre: str = ""
     premise: str = ""
     fork_of: Optional[str] = None
+    author: str = ""
+    publisher: str = ""
+    copyright: str = ""
+    isbn: str = ""
+    series: str = ""
+    series_position: int = 0
+    language: str = "en"
 
 
 class ProjectCreate(ProjectBase):
@@ -94,6 +101,14 @@ class ProjectUpdate(BaseModel):
     description: Optional[str] = None
     genre: Optional[str] = None
     premise: Optional[str] = None
+    fork_of: Optional[str] = None
+    author: Optional[str] = None
+    publisher: Optional[str] = None
+    copyright: Optional[str] = None
+    isbn: Optional[str] = None
+    series: Optional[str] = None
+    series_position: Optional[int] = None
+    language: Optional[str] = None
 
 
 class Project(ProjectBase):
