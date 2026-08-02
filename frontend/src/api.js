@@ -185,6 +185,13 @@ export const api = {
       timeoutMs: 15_000,
     }),
 
+  extractFromStory: (projectId, body) =>
+    request(`/projects/${projectId}/extract`, {
+      method: "POST",
+      body: JSON.stringify(body),
+      timeoutMs: 600_000,
+    }),
+
   listCharacters: (projectId) =>
     request(`/projects/${projectId}/characters`, { timeoutMs: 10_000 }),
   createCharacter: (projectId, body) =>

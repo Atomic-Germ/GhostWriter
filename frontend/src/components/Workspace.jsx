@@ -414,6 +414,8 @@ export default function Workspace({ projectId, health, onBack, onOpenProject }) 
             {rightTab === "series" && project?.series?.trim() && (
               <SeriesPanel
                 seriesName={project.series.trim()}
+                projectId={projectId}
+                currentCharacters={characters}
                 onOpenProject={onOpenProject}
               />
             )}

@@ -41,6 +41,9 @@ def client(tmp_path, monkeypatch):
         async def assist(self, **kwargs):
             return ("offline test reply", False)
 
+        async def complete(self, **kwargs):
+            return '{"characters": [], "world_facts": []}'
+
     monkeypatch.setattr(llm_mod, "get_llm", lambda: _FakeLLM())
 
     from app.main import create_app
@@ -249,3 +252,91 @@ def test_series_flow(client):
     for pid in (book1["id"], book2["id"], solo["id"]):
         r = client.delete(f"/api/projects/{pid}")
         assert r.status_code == 204
+
+
+def test_extract_requires_llm(client):
+    r = client.post("/api/projects", json={"title": "Extractable"})
+    assert r.status_code == 201
+    pid = r.json()["id"]
+    client.post(
+        f"/api/projects/{pid}/chapters",
+        json={
+            "title": "Chapter 1",
+            "content": "Mira walked under two suns. Her sister Ona waited.",
+            "order": 0,
+        },
+    )
+
+    # No LLM connected in the test fixture → 503
+    r = client.post(
+        f"/api/projects/{pid}/extract",
+        json={"project_id": pid},
+    )
+    assert r.status_code == 503
+
+    r = client.delete(f"/api/projects/{pid}")
+    assert r.status_code == 204
+
+
+def test_extract_with_llm(client, monkeypatch):
+    r = client.post("/api/projects", json={"title": "Extractable"})
+    assert r.status_code == 201
+    pid = r.json()["id"]
+    client.post(
+        f"/api/projects/{pid}/chapters",
+        json={
+            "title": "Chapter 1",
+            "content": "Mira walked under two suns. Her sister Ona waited.",
+            "order": 0,
+        },
+    )
+
+    from app.api import extract as extract_mod
+
+    class _ExtractLLM:
+        async def check_available(self, force: bool = False):
+            return True
+
+        async def complete(self, **kwargs):
+            return (
+                '{"characters": [{"name": "Mira", "role": "Protagonist", '
+                '"relationships": "Sister of Ona"}, {"name": "Ona", "role": "Sibling"}], '
+                '"world_facts": ["The world has two suns.", "Magic is tonal."]}'
+            )
+
+    monkeypatch.setattr(extract_mod, "get_llm", lambda: _ExtractLLM())
+
+    r = client.post(
+        f"/api/projects/{pid}/extract",
+        json={"project_id": pid},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    names = [c["name"] for c in body["characters"]]
+    assert names == ["Mira", "Ona"]
+    assert body["world_facts"] == ["The world has two suns.", "Magic is tonal."]
+
+    r = client.delete(f"/api/projects/{pid}")
+    assert r.status_code == 204
+
+
+def test_extract_parser_fallbacks():
+    from app.api.extract import _parse_extraction
+
+    # plain JSON
+    r = _parse_extraction(
+        '{"characters": [{"name": "Mira"}], "world_facts": ["One moon."]}'
+    )
+    assert [c.name for c in r.characters] == ["Mira"]
+    assert r.world_facts == ["One moon."]
+
+    # fenced + trailing prose
+    r = _parse_extraction(
+        "Here:\n```json\n{\"characters\":[{\"name\":\"Zed\"}],\"world_facts\":[]}\n```\nDone."
+    )
+    assert [c.name for c in r.characters] == ["Zed"]
+
+    # garbage → raw preserved, empty lists
+    r = _parse_extraction("definitely not json")
+    assert r.characters == []
+    assert r.raw == "definitely not json"

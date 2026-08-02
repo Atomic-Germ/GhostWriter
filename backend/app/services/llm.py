@@ -52,6 +52,24 @@ MODE_SYSTEM_PROMPTS = {
         "between characters across books; and help expand the bible consistently. "
         "Label speculation clearly and say so when something is unknown."
     ),
+    "extract": (
+        "You are GhostWriter's universe extractor. Read the supplied story prose and "
+        "extract the cast and the worldbuilding it establishes — NOT the plot.\n\n"
+        "Return ONLY a JSON object with exactly two keys, no commentary and no markdown "
+        "code fences:\n"
+        '{"characters": [{"name": "...", "role": "...", "physical_traits": "...", '
+        '"personality": "...", "motivations": "...", "speech_patterns": "...", '
+        '"backstory": "...", "relationships": "...", "notes": "..."}], '
+        '"world_facts": ["...", "..."]}\n\n'
+        "Rules:\n"
+        "- Include a character only if the prose actually establishes something about "
+        "them; use the exact or clearly-inferred name.\n"
+        "- Every character field is a short phrase or blank if unknown — never invent.\n"
+        "- world_facts are short canonical statements about places, rules, magic, "
+        "technology, factions, history, or setting that the story establishes or "
+        "strongly implies. 3–12 facts max.\n"
+        "- Keep it plot-ignorant: no events, no scene summaries, no spoilers."
+    ),
     "plot": (
         "You are GhostWriter, a narrative structure analyst. Evaluate plot threads, "
         "pacing, unresolved hooks, and arc structure. Identify potential plot holes "
@@ -172,7 +190,7 @@ class LLMService:
         max_tok = (
             max_tokens
             if max_tokens is not None
-            else min(int(self.settings.llm_max_tokens), 2048)
+            else min(int(self.settings.llm_max_tokens), 0)
         )
         return {
             "model": self._model_name(),
@@ -210,7 +228,7 @@ class LLMService:
             payload["max_tokens"],
             len(user_message),
         )
-        timeout = httpx.Timeout(connect=10.0, read=600.0, write=60.0, pool=10.0)
+        timeout = httpx.Timeout(connect=10.0, read=15000.0, write=150000.0, pool=25.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.post(url, headers=self._headers(), json=payload)
             if r.status_code >= 400:

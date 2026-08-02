@@ -155,6 +155,32 @@ class SeriesInfo(BaseModel):
     character_count: int = 0
 
 
+# ── Extraction ─────────────────────────────────────────────
+
+class ExtractedCharacter(BaseModel):
+    """A character proposal parsed from story prose (no id yet)."""
+    name: str
+    role: str = ""
+    physical_traits: str = ""
+    personality: str = ""
+    motivations: str = ""
+    speech_patterns: str = ""
+    backstory: str = ""
+    relationships: str = ""
+    notes: str = ""
+
+
+class ExtractRequest(BaseModel):
+    project_id: str
+    chapter_id: Optional[str] = None
+
+
+class ExtractResponse(BaseModel):
+    characters: list[ExtractedCharacter] = Field(default_factory=list)
+    world_facts: list[str] = Field(default_factory=list)
+    raw: str = ""
+
+
 # ── AI / Assist ─────────────────────────────────────────────
 
 class AssistRequest(BaseModel):
