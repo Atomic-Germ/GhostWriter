@@ -173,6 +173,33 @@ export default function Workspace({
     setCharacters((prev) => prev.filter((c) => c.id !== id));
   }
 
+  async function handleImportSeriesCast() {
+    const series = project?.series?.trim();
+    if (!series) return 0;
+    const bible = await api.getSeriesBible(series);
+    const existing = new Set(characters.map((c) => c.name.trim().toLowerCase()));
+    const additions = (bible.characters || []).filter(
+      (c) => !existing.has((c.name || "").trim().toLowerCase())
+    );
+    let count = 0;
+    for (const c of additions) {
+      const created = await api.createCharacter(projectId, {
+        name: c.name,
+        role: c.role || "",
+        physical_traits: c.physical_traits || "",
+        personality: c.personality || "",
+        motivations: c.motivations || "",
+        speech_patterns: c.speech_patterns || "",
+        backstory: c.backstory || "",
+        relationships: c.relationships || "",
+        notes: c.notes || "",
+      });
+      setCharacters((prev) => [...prev, created]);
+      count += 1;
+    }
+    return count;
+  }
+
   async function handleSaveWorld(notes) {
     const p = await api.updateWorldNotes(projectId, notes);
     setProject(p);
@@ -418,6 +445,8 @@ export default function Workspace({
                 onCreate={handleCreateCharacter}
                 onUpdate={handleUpdateCharacter}
                 onDelete={handleDeleteCharacter}
+                seriesName={project?.series?.trim() || ""}
+                onImportFromSeries={project?.series?.trim() ? handleImportSeriesCast : undefined}
               />
             )}
             {rightTab === "world" && (

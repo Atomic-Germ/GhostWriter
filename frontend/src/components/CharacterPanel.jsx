@@ -28,11 +28,15 @@ export default function CharacterPanel({
   onCreate,
   onUpdate,
   onDelete,
+  seriesName,
+  onImportFromSeries,
 }) {
   const [selectedId, setSelectedId] = useState(null);
   const [draft, setDraft] = useState(EMPTY);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState("");
 
   const selected = characters.find((c) => c.id === selectedId) || null;
 
@@ -58,6 +62,24 @@ export default function CharacterPanel({
     });
   }
 
+  async function handleImportFromSeries() {
+    if (!onImportFromSeries) return;
+    setImporting(true);
+    setImportMsg("");
+    try {
+      const added = await onImportFromSeries();
+      setImportMsg(
+        added > 0
+          ? `Imported ${added} character${added === 1 ? "" : "s"} from the series bible.`
+          : "All series cast already in this book."
+      );
+    } catch (err) {
+      setImportMsg(err?.message || "Import failed");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function handleSave(e) {
     e.preventDefault();
     if (!draft.name.trim()) return;
@@ -79,10 +101,32 @@ export default function CharacterPanel({
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-panel-border px-3 py-2">
         <span className="panel-title">Characters</span>
-        <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={openNew}>
-          + New
-        </button>
+        <div className="flex items-center gap-2">
+          {onImportFromSeries && (
+            <button
+              type="button"
+              className="btn-ghost px-2 py-1 text-xs"
+              onClick={handleImportFromSeries}
+              disabled={importing}
+              title={`Pull the series cast (${seriesName || "series bible"}) into this book so Arthur can reference them`}
+            >
+              {importing ? "Importing…" : "Import from series"}
+            </button>
+          )}
+          <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={openNew}>
+            + New
+          </button>
+        </div>
       </div>
+      {importMsg && (
+        <div
+          className={`border-b border-panel-border px-3 py-1.5 text-xs ${
+            importMsg.startsWith("Imported") ? "text-accent" : "text-red-300"
+          }`}
+        >
+          {importMsg}
+        </div>
+      )}
 
       <div className="flex min-h-0 flex-1">
         <ul className="w-36 shrink-0 overflow-y-auto border-r border-panel-border p-2">
