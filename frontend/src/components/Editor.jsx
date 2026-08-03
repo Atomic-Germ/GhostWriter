@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { api } from "../api";
 
 const RATES = [
   { value: 0.75, label: "0.75×" },
   { value: 0.9, label: "0.9×" },
   { value: 1.0, label: "1.0×" },
+  { value: 1.25, label: "1.25×" },
 ];
 
 function SpeakerIcon() {
@@ -27,6 +29,7 @@ function SpeakerIcon() {
 export default function Editor({
   chapter,
   saving,
+  projectId,
   onChangeTitle,
   onChangeContent,
 }) {
@@ -35,15 +38,41 @@ export default function Editor({
   const textareaRef = useRef(null);
   const voicesRef = useRef([]);
   const spokenRef = useRef(null);
+  const audioRef = useRef(null);
   const [speaking, setSpeaking] = useState(false);
   const [rate, setRate] = useState(0.9);
+  const [ttsStatus, setTtsStatus] = useState("unknown"); // unknown | ready | unavailable
+  const [ttsError, setTtsError] = useState("");
 
   const supported =
     typeof window !== "undefined" && "speechSynthesis" in window;
 
+  useEffect(() => {
+    let cancelled = false;
+    if (projectId) {
+      api
+        .ttsStatus(projectId)
+        .then((s) => {
+          if (cancelled) return;
+          setTtsStatus(s?.available ? "ready" : "unavailable");
+        })
+        .catch(() => {
+          if (!cancelled) setTtsStatus("unavailable");
+        });
+    } else {
+      setTtsStatus("unavailable");
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
   function stopSpeaking() {
-    if (!supported) return;
-    window.speechSynthesis.cancel();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    if (supported) window.speechSynthesis.cancel();
     setSpeaking(false);
   }
 
@@ -61,8 +90,45 @@ export default function Editor({
     );
   }
 
-  function speak() {
+  function speakWithOs(text) {
     if (!supported) return;
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = rate;
+    const voice = pickVoice();
+    if (voice) utter.voice = voice;
+    utter.onend = () => setSpeaking(false);
+    utter.onerror = () => setSpeaking(false);
+    window.speechSynthesis.speak(utter);
+    setSpeaking(true);
+  }
+
+  async function speakWithPiper(text) {
+    setSpeaking(true);
+    setTtsError("");
+    try {
+      const blob = await api.ttsPreview(projectId, text);
+      const url = URL.createObjectURL(blob);
+      const audio = audioRef.current;
+      if (!audio) return;
+      audio.src = url;
+      audio.playbackRate = rate;
+      await audio.play();
+      audio.onended = () => {
+        setSpeaking(false);
+        URL.revokeObjectURL(url);
+      };
+      audio.onerror = () => {
+        setSpeaking(false);
+        URL.revokeObjectURL(url);
+      };
+    } catch (err) {
+      setTtsError(err?.message || "TTS preview failed");
+      setSpeaking(false);
+    }
+  }
+
+  function speak() {
     const ta = textareaRef.current;
     const raw = ta ? ta.value : content;
     const start = ta ? ta.selectionStart : 0;
@@ -71,24 +137,12 @@ export default function Editor({
     const text = (hasSelection ? raw.slice(start, end) : raw).trim();
     if (!text) return;
 
-    window.speechSynthesis.cancel();
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.rate = rate;
-    const voice = pickVoice();
-    if (voice) utter.voice = voice;
-
-    spokenRef.current = { offset: hasSelection ? start : 0, source: raw };
-    utter.onboundary = (e) => {
-      if (e.name !== "word" || !ta || ta.value !== raw) return;
-      const idx = (spokenRef.current?.offset || 0) + e.charIndex;
-      ta.setSelectionRange(idx, idx + (e.charLength || 0));
-    };
-    utter.onend = () => setSpeaking(false);
-    utter.onerror = () => setSpeaking(false);
-
-    if (ta) ta.focus();
-    window.speechSynthesis.speak(utter);
-    setSpeaking(true);
+    if (ttsStatus === "ready" && projectId && text.length <= 5000) {
+      // natural voice: read the selection — the "does it sound right" case
+      speakWithPiper(text);
+    } else {
+      speakWithOs(text);
+    }
   }
 
   useEffect(() => {
@@ -136,7 +190,16 @@ export default function Editor({
           placeholder="Chapter title"
         />
         <div className="ml-4 flex shrink-0 items-center gap-3 font-mono text-[11px] text-ink-500">
-          {supported && (
+          {ttsStatus === "ready" && (
+            <span
+              className="rounded-full border border-accent/30 px-2 py-0.5 text-accent"
+              title="Natural local voice (piper) active for Listen"
+            >
+              Voice
+            </span>
+          )}
+          {ttsError && <span className="text-red-300">{ttsError}</span>}
+          {(supported || ttsStatus === "ready") && (
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
@@ -146,7 +209,9 @@ export default function Editor({
                 title={
                   speaking
                     ? "Stop reading"
-                    : "Read the chapter aloud (reads the selected text if any)"
+                    : ttsStatus === "ready"
+                    ? "Read aloud in a natural voice (reads the selected text if any)"
+                    : "Read the chapter aloud with the system voice (reads the selected text if any)"
                 }
                 onClick={() => (speaking ? stopSpeaking() : speak())}
                 disabled={!content.trim()}
@@ -195,6 +260,7 @@ export default function Editor({
         placeholder="Begin writing…"
         spellCheck
       />
+      <audio ref={audioRef} className="hidden" />
     </div>
   );
 }

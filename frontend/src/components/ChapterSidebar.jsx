@@ -10,6 +10,7 @@ const EXPORTS = [
   { id: "cover-jpg", label: "Cover image (.jpg)" },
   { id: "cover-tiff", label: "Cover image (.tiff)" },
   { id: "txt", label: "Plain text" },
+  { id: "audiobook-example", label: "Audiobook example (.wav, guarded)" },
   { id: "json", label: "Full backup (.json)" },
 ];
 
@@ -114,20 +115,26 @@ export default function ChapterSidebar({
           <span className="font-mono text-[10px] text-ink-500">{exportOpen ? "▴" : "▾"}</span>
         </button>
         {exportOpen && (
-          <ul className="mt-1 overflow-hidden rounded-lg border border-panel-border bg-panel-raised shadow-soft">
-            {EXPORTS.map((f) => (
-              <li key={f.id}>
-                <button
-                  type="button"
-                  className="w-full px-3 py-2 text-left text-xs text-ink-200 transition hover:bg-accent/15 hover:text-accent-glow disabled:opacity-50"
-                  disabled={!!exporting}
-                  onClick={() => handleExport(f.id)}
-                >
-                  {exporting === f.id ? "Exporting…" : f.label}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <div className="mt-1 overflow-hidden rounded-lg border border-panel-border bg-panel-raised shadow-soft">
+            <ul>
+              {EXPORTS.map((f) => (
+                <li key={f.id}>
+                  <button
+                    type="button"
+                    className="w-full px-3 py-2 text-left text-xs text-ink-200 transition hover:bg-accent/15 hover:text-accent-glow disabled:opacity-50"
+                    disabled={!!exporting}
+                    onClick={() => handleExport(f.id)}
+                  >
+                    {exporting === f.id ? "Exporting…" : f.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="border-t border-panel-border px-3 py-2 text-[10px] leading-snug text-ink-500">
+              The audiobook example embeds spoken guardrails — it is a preview for
+              hearing your work aloud, not a deliverable.
+            </p>
+          </div>
         )}
       </div>
       {onFork && (

@@ -280,6 +280,10 @@ export default function Workspace({
 
   async function handleExport(format) {
     try {
+      if (format === "audiobook-example") {
+        await api.downloadTtsExport(projectId);
+        return;
+      }
       await api.downloadExport(projectId, format);
     } catch (err) {
       setError(err.message || "Export failed");
@@ -395,6 +399,7 @@ export default function Workspace({
         <Editor
           chapter={activeChapter}
           saving={saving}
+          projectId={projectId}
           onChangeTitle={(title) => {
             if (!activeChapter) return;
             setChapters((prev) =>

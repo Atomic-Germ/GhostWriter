@@ -192,6 +192,60 @@ export const api = {
       timeoutMs: 600_000,
     }),
 
+  ttsStatus: (projectId) =>
+    request(`/projects/${projectId}/tts/status`, { timeoutMs: 10_000 }),
+
+  /** Read a short selection aloud — returns a WAV blob (no guardrail). */
+  async ttsPreview(projectId, text) {
+    const res = await fetch(`${BASE}/projects/${projectId}/tts/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const j = await res.json();
+        detail = j.detail || detail;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    }
+    return await res.blob();
+  },
+
+  /** Full-book audiobook example — WAV with guardrail disclaimers embedded. */
+  async downloadTtsExport(projectId) {
+    const res = await fetch(
+      `${BASE}/projects/${projectId}/tts/export`,
+      { headers: { Accept: "*/*" } }
+    );
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const j = await res.json();
+        detail = j.detail || detail;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get("Content-Disposition") || "";
+    const match = cd.match(/filename="?([^";]+)"?/i);
+    const filename = match?.[1] || "audiobook-example.wav";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    return filename;
+  },
+
   listCharacters: (projectId) =>
     request(`/projects/${projectId}/characters`, { timeoutMs: 10_000 }),
   createCharacter: (projectId, body) =>
