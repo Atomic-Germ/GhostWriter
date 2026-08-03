@@ -336,7 +336,7 @@ class LLMService:
             payload["max_tokens"],
             len(user_message),
         )
-        timeout = httpx.Timeout(connect=10.0, read=600.0, write=60.0, pool=10.0)
+        timeout = httpx.Timeout(connect=10.0, read=60000.0, write=6000.0, pool=10.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream(
                 "POST", url, headers=self._headers(), json=payload
