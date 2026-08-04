@@ -30,6 +30,8 @@ export default function Editor({
   chapter,
   saving,
   projectId,
+  pacing,
+  onPacingChange,
   onChangeTitle,
   onChangeContent,
 }) {
@@ -43,6 +45,7 @@ export default function Editor({
   const [rate, setRate] = useState(0.9);
   const [ttsStatus, setTtsStatus] = useState("unknown"); // unknown | ready | unavailable
   const [ttsError, setTtsError] = useState("");
+  const [pacingOpen, setPacingOpen] = useState(false);
 
   const supported =
     typeof window !== "undefined" && "speechSynthesis" in window;
@@ -107,7 +110,7 @@ export default function Editor({
     setSpeaking(true);
     setTtsError("");
     try {
-      const blob = await api.ttsPreview(projectId, text);
+      const blob = await api.ttsPreview(projectId, text, pacing);
       const url = URL.createObjectURL(blob);
       const audio = audioRef.current;
       if (!audio) return;
@@ -241,6 +244,16 @@ export default function Editor({
                   </option>
                 ))}
               </select>
+              {ttsStatus === "ready" && (
+                <button
+                  type="button"
+                  className={`btn-ghost px-2 py-1 text-xs ${pacingOpen ? "text-accent-glow" : ""}`}
+                  onClick={() => setPacingOpen((v) => !v)}
+                  title="Adjust pauses between paragraphs/scenes and the voice's speaking rate"
+                >
+                  Pacing
+                </button>
+              )}
             </div>
           )}
           <span>{words.toLocaleString()} words</span>
@@ -249,6 +262,40 @@ export default function Editor({
           </span>
         </div>
       </div>
+
+      {pacingOpen && ttsStatus === "ready" && (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-panel-border bg-panel/40 px-6 py-2.5">
+          {[
+            ["paragraph_pause", "Paragraph pause", 0, 2, 0.05, "s"],
+            ["scene_pause", "Scene break pause", 0, 4, 0.1, "s"],
+            ["chapter_pause", "Chapter pause", 0, 4, 0.1, "s"],
+            ["speech_rate", "Speaking rate", 0.5, 1.9, 0.05, "×"],
+          ].map(([key, label, min, max, step, unit]) => (
+            <label key={key} className="flex items-center gap-2 text-[11px] text-ink-400">
+              <span className="w-28 shrink-0">{label}</span>
+              <input
+                type="range"
+                className="w-32 accent-[#c4a35a]"
+                min={min}
+                max={max}
+                step={step}
+                value={(pacing || {})[key]}
+                onChange={(e) =>
+                  onPacingChange?.((prev) => ({
+                    ...(prev || {}),
+                    [key]: Number(e.target.value),
+                  }))
+                }
+                disabled={speaking}
+              />
+              <span className="w-16 font-mono text-ink-300">
+                {pacing[key].toFixed(2)}
+                <span className="ml-0.5 text-ink-600">{unit}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
       <textarea
         ref={textareaRef}
         className="editor-area min-h-0 flex-1 resize-none bg-transparent px-6 py-6 text-ink-100 placeholder:text-ink-700 focus:outline-none md:px-12 lg:px-16"

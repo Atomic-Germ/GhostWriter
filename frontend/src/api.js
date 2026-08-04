@@ -196,8 +196,18 @@ export const api = {
     request(`/projects/${projectId}/tts/status`, { timeoutMs: 10_000 }),
 
   /** Read a short selection aloud — returns a WAV blob (no guardrail). */
-  async ttsPreview(projectId, text) {
-    const res = await fetch(`${BASE}/projects/${projectId}/tts/preview`, {
+  async ttsPreview(projectId, text, pacing = {}) {
+    const params = new URLSearchParams();
+    if (pacing.paragraph_pause !== undefined)
+      params.set("paragraph_pause", pacing.paragraph_pause);
+    if (pacing.scene_pause !== undefined)
+      params.set("scene_pause", pacing.scene_pause);
+    if (pacing.chapter_pause !== undefined)
+      params.set("chapter_pause", pacing.chapter_pause);
+    if (pacing.speech_rate !== undefined)
+      params.set("speech_rate", pacing.speech_rate);
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    const res = await fetch(`${BASE}/projects/${projectId}/tts/preview${qs}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
@@ -216,9 +226,19 @@ export const api = {
   },
 
   /** Full-book audiobook example — WAV with guardrail disclaimers embedded. */
-  async downloadTtsExport(projectId) {
+  async downloadTtsExport(projectId, pacing = {}) {
+    const params = new URLSearchParams();
+    if (pacing.paragraph_pause !== undefined)
+      params.set("paragraph_pause", pacing.paragraph_pause);
+    if (pacing.scene_pause !== undefined)
+      params.set("scene_pause", pacing.scene_pause);
+    if (pacing.chapter_pause !== undefined)
+      params.set("chapter_pause", pacing.chapter_pause);
+    if (pacing.speech_rate !== undefined)
+      params.set("speech_rate", pacing.speech_rate);
+    const qs = params.toString() ? `?${params.toString()}` : "";
     const res = await fetch(
-      `${BASE}/projects/${projectId}/tts/export`,
+      `${BASE}/projects/${projectId}/tts/export${qs}`,
       { headers: { Accept: "*/*" } }
     );
     if (!res.ok) {

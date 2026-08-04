@@ -49,6 +49,12 @@ export default function Workspace({
   const [error, setError] = useState("");
   const [loadState, setLoadState] = useState("loading");
   const [compareOpen, setCompareOpen] = useState(false);
+  const [ttsPacing, setTtsPacing] = useState({
+    paragraph_pause: 0.35,
+    scene_pause: 1.0,
+    chapter_pause: 1.4,
+    speech_rate: 1.0,
+  });
   const saveGen = useRef(0);
   const latestContent = useRef({});
 
@@ -281,7 +287,7 @@ export default function Workspace({
   async function handleExport(format) {
     try {
       if (format === "audiobook-example") {
-        await api.downloadTtsExport(projectId);
+        await api.downloadTtsExport(projectId, ttsPacing);
         return;
       }
       await api.downloadExport(projectId, format);
@@ -400,6 +406,8 @@ export default function Workspace({
           chapter={activeChapter}
           saving={saving}
           projectId={projectId}
+          pacing={ttsPacing}
+          onPacingChange={setTtsPacing}
           onChangeTitle={(title) => {
             if (!activeChapter) return;
             setChapters((prev) =>
