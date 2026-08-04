@@ -269,6 +269,8 @@ export default function Editor({
             ["paragraph_pause", "Paragraph pause", 0, 2, 0.05, "s"],
             ["scene_pause", "Scene break pause", 0, 4, 0.1, "s"],
             ["chapter_pause", "Chapter pause", 0, 4, 0.1, "s"],
+            ["quote_pause", "Before a quote", 0, 2, 0.05, "s"],
+            ["comma_pause", "After a comma", 0, 1, 0.05, "s"],
             ["speech_rate", "Speaking rate", 0.5, 1.9, 0.05, "×"],
           ].map(([key, label, min, max, step, unit]) => (
             <label key={key} className="flex items-center gap-2 text-[11px] text-ink-400">

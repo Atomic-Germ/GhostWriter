@@ -53,6 +53,8 @@ export default function Workspace({
     paragraph_pause: 0.35,
     scene_pause: 1.0,
     chapter_pause: 1.4,
+    quote_pause: 0.0,
+    comma_pause: 0.0,
     speech_rate: 1.0,
   });
   const saveGen = useRef(0);

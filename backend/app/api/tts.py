@@ -40,12 +40,16 @@ def _pacing(
     paragraph_pause,
     scene_pause,
     chapter_pause,
+    quote_pause,
+    comma_pause,
     speech_rate,
 ) -> "tts_svc.Pacing":
     return tts_svc.Pacing(
         paragraph_pause=paragraph_pause,
         scene_pause=scene_pause,
         chapter_pause=chapter_pause,
+        quote_pause=quote_pause,
+        comma_pause=comma_pause,
         speech_rate=speech_rate,
     )
 
@@ -58,6 +62,8 @@ def tts_preview(
     paragraph_pause: float = Query(None, alias="paragraph_pause"),
     scene_pause: float = Query(None, alias="scene_pause"),
     chapter_pause: float = Query(None, alias="chapter_pause"),
+    quote_pause: float = Query(None, alias="quote_pause"),
+    comma_pause: float = Query(None, alias="comma_pause"),
     speech_rate: float = Query(None, alias="speech_rate"),
 ):
     """Quick low-fidelity clip of a short selection (no guardrail)."""
@@ -78,7 +84,9 @@ def tts_preview(
             ),
         )
     try:
-        pacing = _pacing(paragraph_pause, scene_pause, chapter_pause, speech_rate)
+        pacing = _pacing(
+            paragraph_pause, scene_pause, chapter_pause, quote_pause, comma_pause, speech_rate
+        )
         wav = tts.preview_wav(text, pacing)
     except RuntimeError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
@@ -96,6 +104,8 @@ def tts_export(
     paragraph_pause: float = Query(None, alias="paragraph_pause"),
     scene_pause: float = Query(None, alias="scene_pause"),
     chapter_pause: float = Query(None, alias="chapter_pause"),
+    quote_pause: float = Query(None, alias="quote_pause"),
+    comma_pause: float = Query(None, alias="comma_pause"),
     speech_rate: float = Query(None, alias="speech_rate"),
 ):
     """Full-book audiobook example — WAV with guardrail disclaimers embedded."""
@@ -104,7 +114,9 @@ def tts_export(
     if not chapters:
         raise HTTPException(status_code=400, detail="No chapters to synthesize.")
 
-    pacing = _pacing(paragraph_pause, scene_pause, chapter_pause, speech_rate)
+    pacing = _pacing(
+        paragraph_pause, scene_pause, chapter_pause, quote_pause, comma_pause, speech_rate
+    )
 
     tts = _tts()
     if not tts.available():

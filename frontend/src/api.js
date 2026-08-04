@@ -204,6 +204,10 @@ export const api = {
       params.set("scene_pause", pacing.scene_pause);
     if (pacing.chapter_pause !== undefined)
       params.set("chapter_pause", pacing.chapter_pause);
+    if (pacing.quote_pause !== undefined)
+      params.set("quote_pause", pacing.quote_pause);
+    if (pacing.comma_pause !== undefined)
+      params.set("comma_pause", pacing.comma_pause);
     if (pacing.speech_rate !== undefined)
       params.set("speech_rate", pacing.speech_rate);
     const qs = params.toString() ? `?${params.toString()}` : "";
@@ -234,6 +238,10 @@ export const api = {
       params.set("scene_pause", pacing.scene_pause);
     if (pacing.chapter_pause !== undefined)
       params.set("chapter_pause", pacing.chapter_pause);
+    if (pacing.quote_pause !== undefined)
+      params.set("quote_pause", pacing.quote_pause);
+    if (pacing.comma_pause !== undefined)
+      params.set("comma_pause", pacing.comma_pause);
     if (pacing.speech_rate !== undefined)
       params.set("speech_rate", pacing.speech_rate);
     const qs = params.toString() ? `?${params.toString()}` : "";

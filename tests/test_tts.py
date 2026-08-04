@@ -240,6 +240,74 @@ def test_pacing_rate_changes_synth_config_call(tmp_path, monkeypatch):
     assert abs(calls[0].length_scale - (1.0 / 1.2)) < 1e-6
 
 
+def test_punctuation_split_tags_quotes_and_commas():
+    """Tokenizer tags opening quotes and commas so pauses can be spliced."""
+    from app.services.tts import _split_paragraph_units
+
+    para = '"Come here," she said.'
+    units = _split_paragraph_units(para, split_quotes=True, split_commas=True)
+    kinds = [k for k, _ in units]
+    assert kinds[0] == "quote"  # opening quote first
+    assert "comma" in kinds
+    assert kinds[-1] == "text"
+
+    # Closing quote (preceded by a word) is dropped, not tagged as opening.
+    para2 = 'She said "hi" to me.'
+    units2 = _split_paragraph_units(para2, split_quotes=True, split_commas=False)
+    kinds2 = [k for k, _ in units2]
+    assert kinds2.count("quote") == 1
+
+    # No quotes/commas → single text unit, no split.
+    units3 = _split_paragraph_units("Plain words only", split_quotes=True, split_commas=True)
+    assert units3 == [("text", "Plain words only")]
+
+
+def test_quote_and_comma_pauses_add_silence(tmp_path, monkeypatch):
+    """quote_pause + comma_pause splice silence into the clip."""
+    from app.services import tts as tts_mod
+
+    tts_dir = tmp_path / "tts"
+    tts_dir.mkdir(exist_ok=True)
+    (tts_dir / "en_US-lessac-medium.onnx").write_bytes(b"fake-model")
+    (tts_dir / "en_US-lessac-medium.onnx.json").write_text("{}", encoding="utf-8")
+
+    import struct
+
+    class _Voice:
+        def synthesize(self, text):
+            n = 2205  # 0.1s
+            yield type(
+                "Chunk",
+                (),
+                {
+                    "audio_int16_bytes": struct.pack("<%dh" % n, *([0] * n)),
+                    "sample_rate": 22050,
+                },
+            )()
+
+    class _FakeTTS(tts_mod.TTSService):
+        def __init__(self):
+            super().__init__(tts_dir)
+            self._voice = _Voice()
+
+        def ensure_voice(self):
+            return self._voice
+
+    svc = _FakeTTS()
+    text = '"Hello," she said, "how are you?"'
+    p_on = tts_mod.Pacing(quote_pause=0.5, comma_pause=0.5)
+    p_off = tts_mod.Pacing(quote_pause=0.0, comma_pause=0.0)
+
+    w_on = svc.preview_wav(text, p_on)
+    w_off = svc.preview_wav(text, p_off)
+    with wave.open(BytesIO(w_on), "rb") as w:
+        d_on = w.getnframes() / w.getframerate()
+    with wave.open(BytesIO(w_off), "rb") as w:
+        d_off = w.getnframes() / w.getframerate()
+    # 2 quotes * 0.5 + 2 commas * 0.5 = 2.0s extra vs the pauses-off clip
+    assert d_on - d_off > 1.5
+
+
 def test_periodic_guardrail_reinserts_after_interval(tmp_path, monkeypatch):
     """A very long chapter triggers the ~5-min re-guardrail, not just the start."""
     from app.services import tts as tts_mod

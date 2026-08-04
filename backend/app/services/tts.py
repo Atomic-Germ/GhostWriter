@@ -83,6 +83,60 @@ def _split_paragraphs(text: str) -> list[str]:
     return [p.strip() for p in text.split("\n\n") if p.strip()]
 
 
+_OPEN_QUOTES = ('"', "“", "‘", "«", "„")
+_CLOSE_QUOTES = ('"', "”", "’", "»", "“")  # "“" double duty: some books close with "
+_QUOTE_CHARS = set(_OPEN_QUOTES) | set(_CLOSE_QUOTES)
+
+
+def _split_paragraph_units(
+    paragraph: str, *, split_quotes: bool, split_commas: bool
+) -> list[tuple[str, str]]:
+    """Split a paragraph into (text | 'quote' | 'comma', segment) units.
+
+    Returns a list of tagged units so the synthesizer can insert pauses at the
+    right boundaries: 'quote' marks the character(s) that OPEN a quotation,
+    'comma' marks a comma (pause goes AFTER it). Text units are contiguous
+    prose. Paragraphs that contain neither quotes nor commas pass through as a
+    single text unit.
+    """
+    if not (split_quotes or split_commas):
+        return [("text", paragraph)]
+
+    units: list[tuple[str, str]] = []
+    buf = []
+    i = 0
+    n = len(paragraph)
+    while i < n:
+        ch = paragraph[i]
+        if ch in _QUOTE_CHARS and split_quotes:
+            # flush pending text
+            if buf:
+                units.append(("text", "".join(buf)))
+                buf = []
+            # decide open vs close: a quote that ends a word is closing
+            prev = paragraph[i - 1] if i > 0 else " "
+            next_ = paragraph[i + 1] if i + 1 < n else " "
+            prev_ws = prev.isspace() or prev in "([{\u2014\u2013:;,!"
+            next_ws = next_.isspace() or next_ in ".,;:!?)]}"
+            if prev_ws and not next_ws:
+                units.append(("quote", ch))
+            # closing quotes: just drop the marker (piper pauses on its own)
+            i += 1
+            continue
+        if ch == "," and split_commas:
+            if buf:
+                units.append(("text", "".join(buf)))
+                buf = []
+            units.append(("comma", ","))
+            i += 1
+            continue
+        buf.append(ch)
+        i += 1
+    if buf:
+        units.append(("text", "".join(buf)))
+    return units
+
+
 class Pacing:
     """Timing signals used during synthesis (book-wide, adjustable on the fly)."""
 
@@ -91,11 +145,16 @@ class Pacing:
         paragraph_pause: float = 0.35,
         scene_pause: float = 1.0,
         chapter_pause: float = 1.4,
+        quote_pause: float = 0.0,
+        comma_pause: float = 0.0,
         speech_rate: float = 1.0,
     ):
         self.paragraph_pause = _coerce(paragraph_pause, 0.5, lo=0.0, hi=5.0)
         self.scene_pause = _coerce(scene_pause, 1.0, lo=0.0, hi=8.0)
         self.chapter_pause = _coerce(chapter_pause, 1.4, lo=0.0, hi=8.0)
+        # Pause before an opening quote (e.g. before dialogue) and after a comma.
+        self.quote_pause = _coerce(quote_pause, 0.0, lo=0.0, hi=2.0)
+        self.comma_pause = _coerce(comma_pause, 0.0, lo=0.0, hi=1.0)
         # >1 faster, <1 slower (clamped to piper's usable range)
         self.speech_rate = _coerce(speech_rate, 1.0, lo=0.5, hi=1.9)
 
@@ -104,6 +163,8 @@ class Pacing:
             "paragraph_pause": self.paragraph_pause,
             "scene_pause": self.scene_pause,
             "chapter_pause": self.chapter_pause,
+            "quote_pause": self.quote_pause,
+            "comma_pause": self.comma_pause,
             "speech_rate": self.speech_rate,
         }
 
@@ -160,6 +221,26 @@ class TTSService:
 
     # ── preview clip ───────────────────────────────────────────
 
+    def _synth_paragraph(
+        self, text: str, pacing: Pacing, rate: int
+    ) -> list:
+        """Synthesize one paragraph, splicing quote/comma pauses at boundaries."""
+        split_quotes = pacing.quote_pause > 0
+        split_commas = pacing.comma_pause > 0
+        if not (split_quotes or split_commas):
+            return self.synth(text, pacing)
+        pieces: list = []
+        for kind, seg in _split_paragraph_units(
+            text, split_quotes=split_quotes, split_commas=split_commas
+        ):
+            if kind == "text":
+                pieces.extend(self.synth(seg, pacing))
+            elif kind == "quote":
+                pieces.append(_silence(rate, pacing.quote_pause))
+            elif kind == "comma":
+                pieces.append(_silence(rate, pacing.comma_pause))
+        return pieces
+
     def preview_wav(self, text: str, pacing: Pacing | None = None) -> bytes:
         """Render a short selection to a monophonic 16-bit WAV (no guardrail)."""
         text = (text or "").strip()
@@ -173,7 +254,7 @@ class TTSService:
                 if pieces:
                     pieces.append(_silence(22050, pacing.scene_pause))
                 continue
-            pieces.extend(self.synth(para, pacing))
+            pieces.extend(self._synth_paragraph(para, pacing, 22050))
             if i < len(paragraphs) - 1:
                 pieces.append(_silence(22050, pacing.paragraph_pause))
         return _wav_bytes_from_chunks(pieces)
@@ -250,7 +331,10 @@ class TTSService:
                                 )
                                 running_sec += pacing.scene_pause
                             continue
-                        emit(self.synth(para, pacing), pacing.paragraph_pause)
+                        emit(
+                            self._synth_paragraph(para, pacing, disclaimer_rate),
+                            pacing.paragraph_pause,
+                        )
 
                 # Periodic re-guardrail if long enough since the last one.
                 if running_sec - last_guard >= GUARDRAIL_INTERVAL_SEC:
