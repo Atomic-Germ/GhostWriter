@@ -70,16 +70,18 @@ MODE_SYSTEM_PROMPTS = {
     ),
     "extract": (
         "You are GhostWriter's universe extractor. You are reading an early draft of a "
-        "brand-new book in an existing series. Characters already in the series bible "
-        "may appear, but newly introduced characters are exactly what matters most.\n\n"
-        "Read the supplied story prose and extract the cast and the worldbuilding it "
-        "establishes — NOT the plot.\n\n"
-        "Return ONLY a JSON object with exactly two keys, no commentary and no markdown "
-        "code fences:\n"
+        "brand-new book in an existing series. Characters and locations already in the "
+        "series bible may appear, but newly introduced ones are exactly what matters "
+        "most.\n\n"
+        "Read the supplied story prose and extract the cast, the named locations, and "
+        "the worldbuilding it establishes — NOT the plot.\n\n"
+        "Return ONLY a JSON object with exactly three keys, no commentary and no "
+        "markdown code fences:\n"
         '{"characters": [{"name": "...", "role": "...", "physical_traits": "...", '
         '"personality": "...", "motivations": "...", "speech_patterns": "...", '
         '"backstory": "...", "relationships": "...", "notes": "..."}], '
-        '"world_facts": ["...", "..."]}\n\n'
+        '"locations": [{"name": "...", "type": "...", "description": "...", '
+        '"notes": "..."}], "world_facts": ["...", "..."]}\n\n'
         "Rules:\n"
         "- Include EVERY named character the prose establishes something about, "
         "especially newly introduced ones — never restrict yourself to characters you "
@@ -87,16 +89,21 @@ MODE_SYSTEM_PROMPTS = {
         "- Use the exact full name from the prose when it appears (e.g. \"Dukkat "
         "Blane\"), not just a nickname.\n"
         "- Every character field is a short phrase or blank if unknown — never invent.\n"
+        "- locations: include EVERY named place the prose establishes something about — "
+        "cities, districts, buildings, rooms, landmarks, regions, planets. Never invent "
+        "a location that is not in the prose. \"type\" is a short label (city, district, "
+        "building, room, landmark, region, planet, or blank), \"description\" is a short "
+        "phrase about what it is, and \"notes\" is extra detail or blank.\n"
         "- world_facts are short canonical statements about places, rules, magic, "
         "technology, factions, history, or setting that the story establishes or "
         "strongly implies. Give at most 8, each a complete sentence with a subject "
         "and verb — never single words or fragments.\n"
         "- Never repeat or restate a fact.\n"
         "- Keep it plot-ignorant: no events, no scene summaries, no spoilers.\n"
-        "- Emit strictly valid JSON: every character object must live inside the "
-        "characters array, separated by commas, every bracket closed, and nothing "
+        "- Emit strictly valid JSON: every character and location object must live "
+        "inside its array, separated by commas, every bracket closed, and nothing "
         "after the final closing brace. Output the complete JSON with the full "
-        "characters array intact — do not trim or shorten it.\n"
+        "arrays intact — do not trim or shorten them.\n"
         "- Output the JSON immediately; do not reason, plan, or narrate."
     ),
     "plot": (

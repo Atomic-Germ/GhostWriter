@@ -9,7 +9,7 @@ import threading
 from typing import Optional
 
 from app.config import get_settings
-from app.models.schemas import Character, Project
+from app.models.schemas import Character, Location, Project
 from app.services.embeddings import (
     embed_query,
     embed_texts,
@@ -264,6 +264,16 @@ class StoryMemory:
             parts.append(f"Notes: {char.notes}")
         return "\n".join(parts)
 
+    def _location_doc(self, loc: Location) -> str:
+        parts = [f"Location: {loc.name}"]
+        if loc.type:
+            parts.append(f"Type: {loc.type}")
+        if loc.description:
+            parts.append(f"Description: {loc.description}")
+        if loc.notes:
+            parts.append(f"Notes: {loc.notes}")
+        return "\n".join(parts)
+
     def query(
         self,
         project_id: str,
@@ -390,7 +400,7 @@ class StoryMemory:
     def build_series_bible_section(
         self, project: Project
     ) -> tuple[str, list[str]]:
-        """Shared series bible (worldbuilding doc + cross-book cast)."""
+        """Shared series bible (worldbuilding doc + cross-book cast and locations)."""
         from app.db.storage import get_store
 
         bible = get_store().get_series_bible(project.series.strip())
@@ -413,6 +423,15 @@ class StoryMemory:
             )
             sources.extend(
                 [f"Series Character: {c.name}" for c in bible.characters]
+            )
+
+        if bible.locations:
+            loc_blocks = [self._location_doc(l) for l in bible.locations]
+            sections.append(
+                f"## Series Locations\n" + "\n\n".join(loc_blocks)
+            )
+            sources.extend(
+                [f"Series Location: {l.name}" for l in bible.locations]
             )
 
         return "\n\n".join(sections), sources

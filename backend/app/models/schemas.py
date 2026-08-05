@@ -48,6 +48,21 @@ class Character(CharacterBase):
     updated_at: str = Field(default_factory=_now)
 
 
+# ── Locations ──────────────────────────────────────────────
+
+class LocationBase(BaseModel):
+    name: str
+    type: str = ""
+    description: str = ""
+    notes: str = ""
+
+
+class Location(LocationBase):
+    id: str = Field(default_factory=new_id)
+    created_at: str = Field(default_factory=_now)
+    updated_at: str = Field(default_factory=_now)
+
+
 # ── Chapters ────────────────────────────────────────────────
 
 class ChapterBase(BaseModel):
@@ -136,16 +151,18 @@ class ProjectSummary(BaseModel):
 # ── Series ─────────────────────────────────────────────────
 
 class SeriesBible(BaseModel):
-    """Shared worldbuilding doc + cross-book cast for a series name."""
+    """Shared worldbuilding doc + cross-book cast and locations for a series name."""
     name: str
     world_notes: str = ""
     characters: list[Character] = Field(default_factory=list)
+    locations: list[Location] = Field(default_factory=list)
     updated_at: str = Field(default_factory=_now)
 
 
 class SeriesBibleUpdate(BaseModel):
     world_notes: Optional[str] = None
     characters: Optional[list[Character]] = None
+    locations: Optional[list[Location]] = None
 
 
 class SeriesInfo(BaseModel):
@@ -170,6 +187,14 @@ class ExtractedCharacter(BaseModel):
     notes: str = ""
 
 
+class ExtractedLocation(BaseModel):
+    """A location proposal parsed from story prose (no id yet)."""
+    name: str
+    type: str = ""
+    description: str = ""
+    notes: str = ""
+
+
 class ExtractRequest(BaseModel):
     project_id: str
     chapter_id: Optional[str] = None
@@ -177,6 +202,7 @@ class ExtractRequest(BaseModel):
 
 class ExtractResponse(BaseModel):
     characters: list[ExtractedCharacter] = Field(default_factory=list)
+    locations: list[ExtractedLocation] = Field(default_factory=list)
     world_facts: list[str] = Field(default_factory=list)
     raw: str = ""
 

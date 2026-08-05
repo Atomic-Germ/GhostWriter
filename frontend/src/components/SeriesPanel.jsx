@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useDebouncedCallback } from "../hooks/useDebouncedCallback";
 import CharacterPanel from "./CharacterPanel";
+import LocationPanel from "./LocationPanel";
 
 function newId() {
   return (
@@ -47,6 +48,7 @@ export default function SeriesPanel({
         setBible({
           world_notes: b?.world_notes || "",
           characters: b?.characters || [],
+          locations: b?.locations || [],
         });
         const match = seriesList.find((s) => s.name === seriesName);
         setBooks(match?.books || []);
@@ -68,8 +70,13 @@ export default function SeriesPanel({
       const saved = await api.updateSeriesBible(seriesName, {
         world_notes: next.world_notes,
         characters: next.characters,
+        locations: next.locations,
       });
-      setBible({ world_notes: saved.world_notes, characters: saved.characters });
+      setBible({
+        world_notes: saved.world_notes,
+        characters: saved.characters,
+        locations: saved.locations,
+      });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -79,6 +86,12 @@ export default function SeriesPanel({
 
   function patchCharacters(characters) {
     const next = { ...bible, characters };
+    setBible(next);
+    saveBible(next);
+  }
+
+  function patchLocations(locations) {
+    const next = { ...bible, locations };
     setBible(next);
     saveBible(next);
   }
@@ -99,6 +112,22 @@ export default function SeriesPanel({
     patchCharacters((bible.characters || []).filter((c) => c.id !== id));
   }
 
+  async function handleCreateLocation(body) {
+    const created = { ...body, id: newId() };
+    patchLocations([...(bible.locations || []), created]);
+    return created;
+  }
+
+  async function handleUpdateLocation(id, body) {
+    patchLocations(
+      (bible.locations || []).map((l) => (l.id === id ? { ...l, ...body } : l))
+    );
+  }
+
+  async function handleDeleteLocation(id) {
+    patchLocations((bible.locations || []).filter((l) => l.id !== id));
+  }
+
   function handleWorldNotes(text) {
     const next = { ...bible, world_notes: text };
     setBible(next);
@@ -117,6 +146,7 @@ export default function SeriesPanel({
       // Normalize facts (strings) into selectable objects; default all selected
       setExtractResult({
         characters: (result.characters || []).map((c) => ({ ...c, selected: true })),
+        locations: (result.locations || []).map((l) => ({ ...l, selected: true })),
         world_facts: (result.world_facts || []).map((text) => ({
           text,
           selected: true,
@@ -134,6 +164,8 @@ export default function SeriesPanel({
     if (!extractResult || !bible) return;
     const selectedChars =
       extractResult.characters?.filter((c) => c.selected) || [];
+    const selectedLocs =
+      extractResult.locations?.filter((l) => l.selected) || [];
     const selectedFacts =
       extractResult.world_facts?.filter((f) => f.selected).map((f) => f.text) || [];
 
@@ -155,9 +187,24 @@ export default function SeriesPanel({
         id: newId(),
       }));
 
-    // Build ONE next bible and save once, so the cast and world notes persist
-    // together (previously a second save used a stale closure and dropped cast).
+    const existingLocs = new Set(
+      (bible.locations || []).map((l) => l.name.trim().toLowerCase())
+    );
+    const locationAdditions = selectedLocs
+      .filter((l) => !existingLocs.has((l.name || "").trim().toLowerCase()))
+      .map((l) => ({
+        name: l.name,
+        type: l.type || "",
+        description: l.description || "",
+        notes: l.notes || "",
+        id: newId(),
+      }));
+
+    // Build ONE next bible and save once, so the cast, locations, and world notes
+    // persist together (previously a second save used a stale closure and dropped
+    // earlier changes).
     const nextCharacters = [...(bible.characters || []), ...additions];
+    const nextLocations = [...(bible.locations || []), ...locationAdditions];
 
     const notesLines = (bible.world_notes || "").split("\n").filter((l) => l.trim());
     for (const fact of selectedFacts) {
@@ -167,9 +214,14 @@ export default function SeriesPanel({
     }
     const nextWorldNotes = notesLines.join("\n");
 
-    if (additions.length || selectedFacts.length) {
-      setBible({ characters: nextCharacters, world_notes: nextWorldNotes });
-      saveBible({ characters: nextCharacters, world_notes: nextWorldNotes });
+    if (additions.length || locationAdditions.length || selectedFacts.length) {
+      const next = {
+        characters: nextCharacters,
+        locations: nextLocations,
+        world_notes: nextWorldNotes,
+      };
+      setBible(next);
+      saveBible(next);
     }
     setExtractResult(null);
     setError("");
@@ -189,6 +241,15 @@ export default function SeriesPanel({
       ...prev,
       world_facts: prev.world_facts.map((f) =>
         f.text === factText ? { ...f, selected: !f.selected } : f
+      ),
+    }));
+  }
+
+  function toggleLocationSelected(name) {
+    setExtractResult((prev) => ({
+      ...prev,
+      locations: prev.locations.map((l) =>
+        l.name === name ? { ...l, selected: !l.selected } : l
       ),
     }));
   }
@@ -269,8 +330,8 @@ export default function SeriesPanel({
           </span>
         </div>
         <p className="mt-1 text-[11px] leading-snug text-ink-500">
-          Shared worldbuilding + cast for every book in this series. The AI
-          consults this (plus each book's own notes) in every tool.
+          Shared worldbuilding, cast + locations for every book in this series. The
+          AI consults this (plus each book's own notes) in every tool.
         </p>
       </div>
 
@@ -321,8 +382,8 @@ export default function SeriesPanel({
           disabled={extracting}
           title={
             extractChapterId
-              ? "Ask the model to read this chapter and propose the characters + world facts it introduces (nothing is written for you — review before adding)"
-              : "Ask the model to read this book and propose new characters + world facts (nothing is written for you — review before adding)"
+              ? "Ask the model to read this chapter and propose the characters, locations + world facts it introduces (nothing is written for you — review before adding)"
+              : "Ask the model to read this book and propose new characters, locations + world facts (nothing is written for you — review before adding)"
           }
         >
           {extracting ? "Reading…" : "Extract from story"}
@@ -460,6 +521,41 @@ export default function SeriesPanel({
               </div>
             )}
 
+            {extractResult.locations?.length > 0 && (
+              <div className="mb-4">
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-500">
+                  Locations
+                </div>
+                <ul className="space-y-1.5">
+                  {extractResult.locations.map((l) => (
+                    <li key={l.name}>
+                      <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-panel-border bg-panel/40 px-2.5 py-2">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={!!l.selected}
+                          onChange={() => toggleLocationSelected(l.name)}
+                        />
+                        <span className="min-w-0">
+                          <span className="block text-xs font-medium text-ink-200">
+                            {l.name}
+                            {l.type ? (
+                              <span className="ml-1.5 text-ink-500">· {l.type}</span>
+                            ) : null}
+                          </span>
+                          {l.description && (
+                            <span className="mt-0.5 block text-[11px] leading-snug text-ink-400">
+                              {l.description}
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {extractResult.world_facts?.length > 0 && (
               <div>
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-500">
@@ -485,7 +581,9 @@ export default function SeriesPanel({
               </div>
             )}
 
-            {!extractResult.characters?.length && !extractResult.world_facts?.length && (
+            {!extractResult.characters?.length &&
+              !extractResult.locations?.length &&
+              !extractResult.world_facts?.length && (
               <div className="py-6 text-center">
                 <p className="text-xs text-ink-500">
                   Nothing parsed. {extractResult.raw ? "Model returned:" : ""}
@@ -514,8 +612,8 @@ export default function SeriesPanel({
       )}
 
       {!extractResult && (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="flex h-[38%] min-h-[140px] flex-col border-b border-panel-border">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <div className="flex min-h-[140px] flex-[3] flex-col border-b border-panel-border">
             <div className="border-b border-panel-border px-3 py-2">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-500">
                 Worldbuilding bible
@@ -532,12 +630,21 @@ export default function SeriesPanel({
             />
           </div>
 
-          <div className="min-h-0 flex-1">
+          <div className="min-h-[160px] flex-[4] border-b border-panel-border">
             <CharacterPanel
               characters={bible.characters || []}
               onCreate={handleCreateCharacter}
               onUpdate={handleUpdateCharacter}
               onDelete={handleDeleteCharacter}
+            />
+          </div>
+
+          <div className="min-h-[160px] flex-[3]">
+            <LocationPanel
+              locations={bible.locations || []}
+              onCreate={handleCreateLocation}
+              onUpdate={handleUpdateLocation}
+              onDelete={handleDeleteLocation}
             />
           </div>
         </div>

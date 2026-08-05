@@ -131,7 +131,7 @@ def test_chapter_orders_repaired_on_load(store, tmp_path):
 
 
 def test_series_bible_and_grouping(store, tmp_path):
-    from app.models.schemas import Character, ProjectSummary, SeriesBibleUpdate
+    from app.models.schemas import Character, Location, ProjectSummary, SeriesBibleUpdate
 
     a = store.create_project(
         ProjectCreate(title="Book One", series="Twin Suns", series_position=1)
@@ -145,8 +145,9 @@ def test_series_bible_and_grouping(store, tmp_path):
     bible = store.get_series_bible("Twin Suns")
     assert bible.world_notes == ""
     assert bible.characters == []
+    assert bible.locations == []
 
-    # Save world notes + cast
+    # Save world notes + cast + locations
     bible = store.update_series_bible(
         "Twin Suns",
         SeriesBibleUpdate(
@@ -154,15 +155,21 @@ def test_series_bible_and_grouping(store, tmp_path):
             characters=[
                 Character(name="Mira", role="Protagonist", relationships="Sister of Ona")
             ],
+            locations=[
+                Location(name="Vell Mar", type="city", description="Mira's home")
+            ],
         ),
     )
     assert bible.world_notes == "Two suns, tonal magic."
     assert bible.characters[0].name == "Mira"
+    assert bible.locations[0].name == "Vell Mar"
 
     # Re-read from disk
     bible2 = store.get_series_bible("Twin Suns")
     assert bible2.world_notes == "Two suns, tonal magic."
     assert bible2.characters[0].name == "Mira"
+    assert bible2.locations[0].name == "Vell Mar"
+    assert bible2.locations[0].type == "city"
 
     # Summaries expose series + grouping works
     summaries = store.list_projects()

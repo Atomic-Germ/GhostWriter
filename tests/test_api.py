@@ -323,6 +323,9 @@ def test_extract_with_llm(client, monkeypatch):
             return (
                 '{"characters": [{"name": "Mira", "role": "Protagonist", '
                 '"relationships": "Sister of Ona"}, {"name": "Ona", "role": "Sibling"}], '
+                '"locations": [{"name": "Vell Mar", "type": "city", '
+                '"description": "Mira\'s home"}, {"name": "The Bell Tower", '
+                '"type": "landmark"}], '
                 '"world_facts": ["The world has two suns.", "Magic is tonal."]}'
             )
 
@@ -336,6 +339,9 @@ def test_extract_with_llm(client, monkeypatch):
     body = r.json()
     names = [c["name"] for c in body["characters"]]
     assert names == ["Mira", "Ona"]
+    loc_names = [l["name"] for l in body["locations"]]
+    assert loc_names == ["Vell Mar", "The Bell Tower"]
+    assert body["locations"][0]["type"] == "city"
     assert body["world_facts"] == ["The world has two suns.", "Magic is tonal."]
 
     r = client.delete(f"/api/projects/{pid}")
@@ -376,6 +382,7 @@ def test_extract_retries_when_model_rambles(client, monkeypatch):
                 '{"characters": [{"name": "Dukkat", "role": "Bureaucrat", '
                 '"relationships": "Husband of Eloise"}, '
                 '{"name": "Eloise", "role": "Teacher"}], '
+                '"locations": [{"name": "Synergy Cab HQ", "type": "building"}], '
                 '"world_facts": ["Synergy Cab is the nationalized transit service."]}'
             )
 
@@ -389,6 +396,7 @@ def test_extract_retries_when_model_rambles(client, monkeypatch):
     body = r.json()
     names = [c["name"] for c in body["characters"]]
     assert names == ["Dukkat", "Eloise"]
+    assert [l["name"] for l in body["locations"]] == ["Synergy Cab HQ"]
     assert len(calls) == 2
 
     r = client.delete(f"/api/projects/{pid}")
@@ -402,6 +410,19 @@ def test_extract_parser_fallbacks():
         '{"characters": [{"name": "Mira"}], "world_facts": ["One moon."]}'
     )
     assert [c.name for c in r.characters] == ["Mira"]
+    assert r.world_facts == ["One moon."]
+
+    # plain JSON with locations
+    r = _parse_extraction(
+        '{"characters": [{"name": "Mira"}], '
+        '"locations": [{"name": "Vell Mar", "type": "city", '
+        '"description": "Mira\'s home"}], '
+        '"world_facts": ["One moon."]}'
+    )
+    assert [c.name for c in r.characters] == ["Mira"]
+    assert [l.name for l in r.locations] == ["Vell Mar"]
+    assert r.locations[0].type == "city"
+    assert r.locations[0].description == "Mira's home"
     assert r.world_facts == ["One moon."]
 
     # fenced + trailing prose
@@ -422,6 +443,23 @@ def test_extract_parser_fallbacks():
     )
     assert [c.name for c in r.characters] == ["Mira", "Zed"]
     assert r.world_facts == ["One moon.", "Two suns."]
+
+    # malformed array for locations too (dangling object rescued by repair)
+    r = _parse_extraction(
+        '{"characters": [{"name": "Mira"}], "locations": [{"name": "Vell Mar"}], '
+        '{"name": "The Bell Tower"}], "world_facts": ["One moon."]}'
+    )
+    assert [l.name for l in r.locations] == ["Vell Mar", "The Bell Tower"]
+
+    # keys out of order: locations before characters — repair slices per key
+    r = _parse_extraction(
+        '{"locations": [{"name": "Vell Mar", "type": "city"}], '
+        '"characters": [{"name": "Mira"}], '
+        '"world_facts": ["One moon."]}'
+    )
+    assert [l.name for l in r.locations] == ["Vell Mar"]
+    assert [c.name for c in r.characters] == ["Mira"]
+    assert r.world_facts == ["One moon."]
 
     # junk facts: single words and repeats are dropped
     r = _parse_extraction(

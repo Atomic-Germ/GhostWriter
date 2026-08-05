@@ -6,7 +6,12 @@ import re
 from fastapi import APIRouter, HTTPException
 
 from app.db.storage import get_store
-from app.models.schemas import ExtractRequest, ExtractResponse, ExtractedCharacter
+from app.models.schemas import (
+    ExtractRequest,
+    ExtractResponse,
+    ExtractedCharacter,
+    ExtractedLocation,
+)
 from app.services.llm import MODE_SYSTEM_PROMPTS, get_llm
 from app.services.rag import StoryMemory
 
@@ -20,11 +25,12 @@ _JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
 # and never emitted the JSON. Short, insistent, and schema-first.
 _RETRY_SYSTEM_PROMPT = (
     "You are GhostWriter's universe extractor. Your previous attempt returned no "
-    "valid JSON. Now output ONLY a JSON object with exactly two keys describing the "
-    "cast and setting established in the prose below.\n\n"
+    "valid JSON. Now output ONLY a JSON object with exactly three keys describing the "
+    "cast, locations, and setting established in the prose below.\n\n"
     'Schema: {"characters": [{"name": "...", "role": "...", "physical_traits": "...", '
     '"personality": "...", "motivations": "...", "speech_patterns": "...", '
     '"backstory": "...", "relationships": "...", "notes": "..."}], '
+    '"locations": [{"name": "...", "type": "...", "description": "...", "notes": "..."}], '
     '"world_facts": ["...", "..."]}\n\n'
     "Include every named character, especially newly introduced ones, using their "
     "exact full name from the prose. Do not reason, plan, or narrate — emit the JSON "
@@ -45,6 +51,18 @@ def _char_from_dict(item) -> ExtractedCharacter | None:
         speech_patterns=str(item.get("speech_patterns", "") or "").strip()[:500],
         backstory=str(item.get("backstory", "") or "").strip()[:2000],
         relationships=str(item.get("relationships", "") or "").strip()[:1000],
+        notes=str(item.get("notes", "") or "").strip()[:1000],
+    )
+
+
+def _location_from_dict(item) -> ExtractedLocation | None:
+    """Map a raw location dict to a schema object (skips non-locations)."""
+    if not isinstance(item, dict) or not item.get("name"):
+        return None
+    return ExtractedLocation(
+        name=str(item.get("name", "")).strip()[:200],
+        type=str(item.get("type", "") or "").strip()[:200],
+        description=str(item.get("description", "") or "").strip()[:1000],
         notes=str(item.get("notes", "") or "").strip()[:1000],
     )
 
@@ -170,30 +188,59 @@ def _clean_world_facts(facts: list[str]) -> list[str]:
     return out
 
 
+_REPAIR_KEYS = ("characters", "locations", "world_facts")
+
+
+def _key_regions(text: str) -> dict[str, str]:
+    """Slice text into per-key regions using the LAST occurrence of each key.
+
+    Thinking models sometimes close the array before emitting every object
+    (e.g. `[ {…}], {…}], {…}], "world_facts": …`). We extract each region
+    independently so an object can be rescued even when the surrounding JSON
+    is malformed.
+    """
+    positions = [
+        (text.rfind(f'"{k}"'), k) for k in _REPAIR_KEYS
+    ]
+    positions = sorted((p, k) for p, k in positions if p != -1)
+    regions: dict[str, str] = {}
+    for i, (pos, key) in enumerate(positions):
+        end = positions[i + 1][0] if i + 1 < len(positions) else len(text)
+        regions[key] = text[pos:end]
+    return regions
+
+
 def _repair_extraction(text: str) -> ExtractResponse | None:
-    """Best-effort recovery from malformed model output (see _balanced_objects)."""
-    ckey = text.find('"characters"')
-    wkey = text.find('"world_facts"')
-    region_end = wkey if wkey != -1 else len(text)
+    """Best-effort recovery from malformed model output (see _key_regions)."""
+    regions = _key_regions(text)
 
     characters: list[ExtractedCharacter] = []
     seen: set[str] = set()
-    if ckey != -1:
-        for obj in _balanced_objects(text[ckey + 1 : region_end]):
-            c = _char_from_dict(obj)
-            if c and c.name.lower() not in seen:
-                seen.add(c.name.lower())
-                characters.append(c)
+    for obj in _balanced_objects(regions.get("characters", "")):
+        c = _char_from_dict(obj)
+        if c and c.name.lower() not in seen:
+            seen.add(c.name.lower())
+            characters.append(c)
+
+    locations: list[ExtractedLocation] = []
+    seen_locs: set[str] = set()
+    for obj in _balanced_objects(regions.get("locations", "")):
+        loc = _location_from_dict(obj)
+        if loc and loc.name.lower() not in seen_locs:
+            seen_locs.add(loc.name.lower())
+            locations.append(loc)
 
     world_facts: list[str] = []
-    if wkey != -1:
+    wregion = regions.get("world_facts", "")
+    if wregion:
         world_facts = _clean_world_facts(
-            s.strip() for s in _string_values(text[wkey:]) if s.strip()
+            s.strip() for s in _string_values(wregion) if s.strip()
         )
 
-    if characters or world_facts:
+    if characters or locations or world_facts:
         return ExtractResponse(
             characters=characters,
+            locations=locations,
             world_facts=world_facts,
             raw=text,
         )
@@ -219,11 +266,17 @@ def _parse_extraction(raw: str) -> ExtractResponse:
                 characters = [
                     c for c in (_char_from_dict(i) for i in data.get("characters") or []) if c
                 ]
+                locations = [
+                    loc
+                    for loc in (_location_from_dict(i) for i in data.get("locations") or [])
+                    if loc
+                ]
                 world_facts = _clean_world_facts(
                     f for f in data.get("world_facts") or [] if isinstance(f, str)
                 )
                 return ExtractResponse(
                     characters=characters,
+                    locations=locations,
                     world_facts=world_facts,
                     raw=raw,
                 )
@@ -271,7 +324,8 @@ async def extract_from_story(project_id: str, payload: ExtractRequest):
         prose_parts = [StoryMemory._clip_chapter_body(b, per) for b in bodies]
 
     user_message = (
-        "Extract the cast and worldbuilding from this story prose (ignore plot):\n\n"
+        "Extract the cast, named locations, and worldbuilding from this story prose "
+        "(ignore plot):\n\n"
         + "\n\n".join(prose_parts)
     )
 
@@ -297,21 +351,22 @@ async def extract_from_story(project_id: str, payload: ExtractRequest):
     raw = await _run(MODE_SYSTEM_PROMPTS["extract"], 16384)
     result = _parse_extraction(raw)
 
-    if not result.characters and not result.world_facts and (raw or "").strip():
+    if not result.characters and not result.locations and not result.world_facts and (raw or "").strip():
         # Thinking models often spend their whole output budget on a reasoning
         # preamble and never write the JSON. Give them one tight second chance.
         logger.info("Extraction: empty parse — retrying with strict JSON prompt")
         retried = await _run(_RETRY_SYSTEM_PROMPT, 8192)
         reparsed = _parse_extraction(retried)
-        if reparsed.characters or reparsed.world_facts:
+        if reparsed.characters or reparsed.locations or reparsed.world_facts:
             result = reparsed
         else:
             result = ExtractResponse(raw=retried or raw)
 
     logger.info(
-        "Extract done project=%s characters=%s facts=%s",
+        "Extract done project=%s characters=%s locations=%s facts=%s",
         project_id,
         len(result.characters),
+        len(result.locations),
         len(result.world_facts),
     )
     return result

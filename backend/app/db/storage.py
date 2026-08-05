@@ -407,6 +407,8 @@ class ProjectStore:
                 bible.world_notes = payload.world_notes
             if payload.characters is not None:
                 bible.characters = payload.characters
+            if payload.locations is not None:
+                bible.locations = payload.locations
             bible.updated_at = _now()
             path = self._series_path(name)
             tmp = path.with_name(f".{path.stem}.{os.getpid()}.{new_id()[:8]}.tmp")
