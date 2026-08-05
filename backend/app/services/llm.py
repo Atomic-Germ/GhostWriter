@@ -69,8 +69,11 @@ MODE_SYSTEM_PROMPTS = {
         "say so plainly. Use a concise bullet list."
     ),
     "extract": (
-        "You are GhostWriter's universe extractor. Read the supplied story prose and "
-        "extract the cast and the worldbuilding it establishes — NOT the plot.\n\n"
+        "You are GhostWriter's universe extractor. You are reading an early draft of a "
+        "brand-new book in an existing series. Characters already in the series bible "
+        "may appear, but newly introduced characters are exactly what matters most.\n\n"
+        "Read the supplied story prose and extract the cast and the worldbuilding it "
+        "establishes — NOT the plot.\n\n"
         "Return ONLY a JSON object with exactly two keys, no commentary and no markdown "
         "code fences:\n"
         '{"characters": [{"name": "...", "role": "...", "physical_traits": "...", '
@@ -78,13 +81,23 @@ MODE_SYSTEM_PROMPTS = {
         '"backstory": "...", "relationships": "...", "notes": "..."}], '
         '"world_facts": ["...", "..."]}\n\n'
         "Rules:\n"
-        "- Include a character only if the prose actually establishes something about "
-        "them; use the exact or clearly-inferred name.\n"
+        "- Include EVERY named character the prose establishes something about, "
+        "especially newly introduced ones — never restrict yourself to characters you "
+        "already know from a series bible, and never omit a new or secondary character.\n"
+        "- Use the exact full name from the prose when it appears (e.g. \"Dukkat "
+        "Blane\"), not just a nickname.\n"
         "- Every character field is a short phrase or blank if unknown — never invent.\n"
         "- world_facts are short canonical statements about places, rules, magic, "
         "technology, factions, history, or setting that the story establishes or "
-        "strongly implies. 3–12 facts max.\n"
-        "- Keep it plot-ignorant: no events, no scene summaries, no spoilers."
+        "strongly implies. Give at most 8, each a complete sentence with a subject "
+        "and verb — never single words or fragments.\n"
+        "- Never repeat or restate a fact.\n"
+        "- Keep it plot-ignorant: no events, no scene summaries, no spoilers.\n"
+        "- Emit strictly valid JSON: every character object must live inside the "
+        "characters array, separated by commas, every bracket closed, and nothing "
+        "after the final closing brace. Output the complete JSON with the full "
+        "characters array intact — do not trim or shorten it.\n"
+        "- Output the JSON immediately; do not reason, plan, or narrate."
     ),
     "plot": (
         "You are Arthur, a narrative structure analyst. Evaluate plot threads, "
@@ -244,7 +257,12 @@ class LLMService:
             payload["max_tokens"],
             len(user_message),
         )
-        timeout = httpx.Timeout(connect=10.0, read=15000.0, write=150000.0, pool=25.0)
+        timeout = httpx.Timeout(
+            connect=10.0,
+            read=self.settings.llm_request_timeout,
+            write=150000.0,
+            pool=25.0,
+        )
         async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.post(url, headers=self._headers(), json=payload)
             if r.status_code >= 400:
@@ -336,7 +354,12 @@ class LLMService:
             payload["max_tokens"],
             len(user_message),
         )
-        timeout = httpx.Timeout(connect=10.0, read=60000.0, write=6000.0, pool=10.0)
+        timeout = httpx.Timeout(
+            connect=10.0,
+            read=self.settings.llm_request_timeout,
+            write=30000.0,
+            pool=10.0,
+        )
         async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream(
                 "POST", url, headers=self._headers(), json=payload

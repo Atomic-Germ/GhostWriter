@@ -30,6 +30,7 @@ export default function Editor({
   chapter,
   saving,
   projectId,
+  contentSync = 0,
   pacing,
   onPacingChange,
   onChangeTitle,
@@ -152,7 +153,7 @@ export default function Editor({
     setTitle(chapter?.title || "");
     setContent(chapter?.content || "");
     stopSpeaking();
-  }, [chapter?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chapter?.id, contentSync]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!supported) return;

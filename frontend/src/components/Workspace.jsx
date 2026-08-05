@@ -59,6 +59,7 @@ export default function Workspace({
   });
   const saveGen = useRef(0);
   const latestContent = useRef({});
+  const [contentSync, setContentSync] = useState(0);
 
   const activeChapter = useMemo(
     () => chapters.find((c) => c.id === activeChapterId) || null,
@@ -259,6 +260,7 @@ export default function Workspace({
       )
     );
     saveChapter(activeChapter.id, { content: next });
+    setContentSync((s) => s + 1);
   }
 
   async function handleIndex() {
@@ -408,6 +410,7 @@ export default function Workspace({
           chapter={activeChapter}
           saving={saving}
           projectId={projectId}
+          contentSync={contentSync}
           pacing={ttsPacing}
           onPacingChange={setTtsPacing}
           onChangeTitle={(title) => {
@@ -477,7 +480,8 @@ export default function Workspace({
               <SeriesPanel
                 seriesName={project.series.trim()}
                 projectId={projectId}
-                currentCharacters={characters}
+                chapters={chapters}
+                activeChapterId={activeChapterId}
                 onOpenProject={onOpenProject}
               />
             )}

@@ -1,6 +1,6 @@
 # GhostWriter
 
-Intelligent writing companion for authors. GhostWriter keeps a living memory of your characters, chapters, and world lore, then uses RAG + an LLM to help you brainstorm, continue prose, check consistency, and catch plot holes.
+Intelligent writing companion for authors. GhostWriter's AI is Arthur, and Arthur is never the author. Arthur does not try to be the author. It reads what you write and keeps story bible of your characters, chapters, and world lore, then uses RAG with an LLM of your choice to help you brainstorm, continue prose, check consistency, and catch plot holes. Most features don't actually require a running LLM -- this is not a story generating bot.
 
 ## Features (MVP)
 
@@ -8,11 +8,11 @@ Intelligent writing companion for authors. GhostWriter keeps a living memory of 
 - **Character dossiers** — traits, motivations, speech patterns, relationships
 - **World & lore notes** — freeform world-building stored with the manuscript
 - **Story memory (RAG)** — chapters/characters/world notes chunked into ChromaDB
-- **AI assist modes** — Brainstorm · Continue · Consistency · Lore · Plot · Influence
+- **AI assist modes** — Brainstorm · Continue · Consistency Check · Lore · Plot · Influence Check
 - **Influence Analyzer** — maps literary/thematic resonances with cited evidence (craft awareness, not judgment)
-- **Story map** — tension pulse, chapter mass, cast presence grid, arc lanes, story circle, co-presence links
-- **Export** — Markdown, plain text, HTML, DOCX, EPUB, or full JSON backup
-- **Local-first LLM** — any OpenAI-compatible API (llama.cpp server, Ollama, OpenAI, …)
+- **Story map** — tension pulse, chapter mass, cast presence grid, arc lanes, story circle, co-presence links -- This is the most useful feature for most authors. It offloads mental overhead that isn't the storyline.
+- **Export** — Markdown, plain text, HTML, DOCX, EPUB, no-publish watermarked WAV, or full JSON backup
+- **Local-first LLM** — any OpenAI-compatible API (llama.cpp server, Ollama, OpenAI, FastFlowLM, etc)
 - **Offline fallbacks** — useful checklists when no model is running
 
 ## Stack

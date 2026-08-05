@@ -15,7 +15,8 @@ function newId() {
 export default function SeriesPanel({
   seriesName,
   projectId,
-  currentCharacters = [],
+  chapters = [],
+  activeChapterId = null,
   onOpenProject,
 }) {
   const [bible, setBible] = useState(null);
@@ -26,6 +27,7 @@ export default function SeriesPanel({
 
   const [extracting, setExtracting] = useState(false);
   const [extractResult, setExtractResult] = useState(null);
+  const [extractChapterId, setExtractChapterId] = useState(activeChapterId || "");
 
   const [canonRunning, setCanonRunning] = useState(false);
   const [canonText, setCanonText] = useState("");
@@ -103,35 +105,6 @@ export default function SeriesPanel({
     saveBible(next);
   }
 
-  async function handleImportCast() {
-    const existing = new Set(
-      (bible?.characters || []).map((c) => c.name.trim().toLowerCase())
-    );
-    const additions = (currentCharacters || []).filter(
-      (c) => !existing.has((c.name || "").trim().toLowerCase())
-    );
-    if (additions.length === 0) {
-      setError("All of this book's characters are already in the series bible.");
-      return;
-    }
-    patchCharacters([
-      ...(bible.characters || []),
-      ...additions.map((c) => ({
-        name: c.name,
-        role: c.role || "",
-        physical_traits: c.physical_traits || "",
-        personality: c.personality || "",
-        motivations: c.motivations || "",
-        speech_patterns: c.speech_patterns || "",
-        backstory: c.backstory || "",
-        relationships: c.relationships || "",
-        notes: c.notes || "",
-        id: newId(),
-      })),
-    ]);
-    setError("");
-  }
-
   async function handleExtract() {
     setExtracting(true);
     setError("");
@@ -139,6 +112,7 @@ export default function SeriesPanel({
     try {
       const result = await api.extractFromStory(projectId, {
         project_id: projectId,
+        chapter_id: extractChapterId || undefined,
       });
       // Normalize facts (strings) into selectable objects; default all selected
       setExtractResult({
@@ -323,28 +297,35 @@ export default function SeriesPanel({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-1.5 border-b border-panel-border px-3 py-2">
-        <button
-          type="button"
-          className="btn-ghost px-2 py-1 text-xs"
-          onClick={handleImportCast}
-          disabled={!currentCharacters?.length}
-          title={
-            currentCharacters?.length
-              ? `Add this book's ${currentCharacters.length} character(s) to the bible`
-              : "This book has no characters yet"
-          }
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-panel-border px-3 py-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-500">
+          Extract from
+        </span>
+        <select
+          value={extractChapterId}
+          onChange={(e) => setExtractChapterId(e.target.value)}
+          className="cursor-pointer rounded border border-panel-border bg-panel/60 px-1.5 py-1 text-[11px] text-ink-300 hover:bg-panel-raised focus:outline-none"
+          title="Read the whole book, or focus on one chapter to find the characters it introduces"
         >
-          Import this book's cast
-        </button>
-<button
+          <option value="">Whole book</option>
+          {chapters.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.title || "Untitled chapter"}
+            </option>
+          ))}
+        </select>
+        <button
           type="button"
           className="btn-ghost px-2 py-1 text-xs"
           onClick={handleExtract}
           disabled={extracting}
-          title="Ask the model to read this book and propose characters + world facts (you review before adding)"
+          title={
+            extractChapterId
+              ? "Ask the model to read this chapter and propose the characters + world facts it introduces (nothing is written for you — review before adding)"
+              : "Ask the model to read this book and propose new characters + world facts (nothing is written for you — review before adding)"
+          }
         >
-          {extracting ? "Reading book…" : "Extract from story"}
+          {extracting ? "Reading…" : "Extract from story"}
         </button>
         <button
           type="button"
@@ -505,9 +486,18 @@ export default function SeriesPanel({
             )}
 
             {!extractResult.characters?.length && !extractResult.world_facts?.length && (
-              <p className="py-6 text-center text-xs text-ink-500">
-                Nothing parsed. {extractResult.raw ? "Model returned:" : ""}
-              </p>
+              <div className="py-6 text-center">
+                <p className="text-xs text-ink-500">
+                  Nothing parsed. {extractResult.raw ? "Model returned:" : ""}
+                </p>
+                {extractResult.raw && (
+                  <p className="mt-2 px-4 text-[11px] leading-snug text-ink-600">
+                    Thinking models sometimes spend their whole output budget on a
+                    reasoning preamble and never write the JSON. Retry — the app will
+                    give the model a strict second chance automatically.
+                  </p>
+                )}
+              </div>
             )}
             {extractResult.raw && (
               <details className="mt-3 rounded-lg border border-panel-border bg-ink-950/50 p-2">

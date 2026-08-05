@@ -35,9 +35,12 @@ class Settings(BaseSettings):
     llm_model: str = "local-model"
     llm_max_tokens: int = 320000
     llm_temperature: float = 0.3
+    # Max seconds to wait for the LLM (large contexts on local models take
+    # minutes; applies to streamed and non-streamed calls alike)
+    llm_request_timeout: float = 18000.0
 
     # Embeddings: "hash" (default, fast, no torch) or "st" (sentence-transformers)
-    embedding_backend: str = "hash"
+    embedding_backend: str = "st"
     embedding_model: str = "all-MiniLM-L6-v2"
     rag_top_k: int = 5
     chunk_size: int = 500

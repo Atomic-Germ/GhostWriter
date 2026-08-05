@@ -342,9 +342,61 @@ def test_extract_with_llm(client, monkeypatch):
     assert r.status_code == 204
 
 
+def test_extract_retries_when_model_rambles(client, monkeypatch):
+    """A thinking model that only emits reasoning should trigger the strict retry."""
+    r = client.post("/api/projects", json={"title": "Rambler"})
+    assert r.status_code == 201
+    pid = r.json()["id"]
+    client.post(
+        f"/api/projects/{pid}/chapters",
+        json={
+            "title": "Chapter 1",
+            "content": "Dukkat waited for the tube car. Eloise called him Ducky.",
+            "order": 0,
+        },
+    )
+
+    from app.api import extract as extract_mod
+
+    calls = []
+
+    class _RamblingLLM:
+        async def check_available(self, force: bool = False):
+            return True
+
+        async def complete(self, **kwargs):
+            calls.append(kwargs.get("system_prompt", ""))
+            if len(calls) == 1:
+                # Reasoning-only first pass: no JSON, just thinking aloud.
+                return (
+                    "I should identify the characters. Dukkat is the main one here, "
+                    "nicknamed Ducky by his wife Eloise. I'll write the JSON now."
+                )
+            return (
+                '{"characters": [{"name": "Dukkat", "role": "Bureaucrat", '
+                '"relationships": "Husband of Eloise"}, '
+                '{"name": "Eloise", "role": "Teacher"}], '
+                '"world_facts": ["Synergy Cab is the nationalized transit service."]}'
+            )
+
+    monkeypatch.setattr(extract_mod, "get_llm", lambda: _RamblingLLM())
+
+    r = client.post(
+        f"/api/projects/{pid}/extract",
+        json={"project_id": pid},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    names = [c["name"] for c in body["characters"]]
+    assert names == ["Dukkat", "Eloise"]
+    assert len(calls) == 2
+
+    r = client.delete(f"/api/projects/{pid}")
+    assert r.status_code == 204
+
+
 def test_extract_parser_fallbacks():
     from app.api.extract import _parse_extraction
-
     # plain JSON
     r = _parse_extraction(
         '{"characters": [{"name": "Mira"}], "world_facts": ["One moon."]}'
@@ -362,3 +414,18 @@ def test_extract_parser_fallbacks():
     r = _parse_extraction("definitely not json")
     assert r.characters == []
     assert r.raw == "definitely not json"
+
+    # malformed array: objects dangling outside the characters list
+    r = _parse_extraction(
+        '{"characters": [{"name": "Mira"}], {"name": "Zed"}], '
+        '"world_facts": ["One moon.", "Two suns."]}'
+    )
+    assert [c.name for c in r.characters] == ["Mira", "Zed"]
+    assert r.world_facts == ["One moon.", "Two suns."]
+
+    # junk facts: single words and repeats are dropped
+    r = _parse_extraction(
+        '{"characters": [], "world_facts": ["watch", "watch", "opinion", '
+        '"Districts go dark.", "districts go dark.", "gr"]}'
+    )
+    assert r.world_facts == ["Districts go dark."]

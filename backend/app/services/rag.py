@@ -124,6 +124,21 @@ class StoryMemory:
             if collection is None:
                 return 0
 
+            # Drop superseded vectors before re-adding, or the collection grows
+            # stale forever (chunk ids hash content, so any edit renames them).
+            # Scoped re-index only touches the affected chapter; full re-index
+            # clears the whole project so deleted chapters/characters/notes go.
+            if chapter_id:
+                try:
+                    collection.delete(where={"chapter_id": chapter_id})
+                except Exception:  # noqa: BLE001
+                    pass
+            else:
+                try:
+                    collection.delete(where={"project_id": project.id})
+                except Exception:  # noqa: BLE001
+                    pass
+
             ids: list[str] = []
             documents: list[str] = []
             metadatas: list[dict] = []

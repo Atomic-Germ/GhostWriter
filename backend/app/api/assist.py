@@ -62,7 +62,7 @@ async def _prepare_context(payload: AssistRequest) -> tuple[str, list[str], str,
             project,
             payload.prompt,
             context_text,
-            False,
+            True,
         )
     available = await llm.check_available()
     return context, sources, context_text, available

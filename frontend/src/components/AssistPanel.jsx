@@ -24,11 +24,17 @@ const PLACEHOLDERS = {
 };
 
 const DEFAULT_PROMPTS = {
+  brainstorm:
+    "Survey this draft and propose a few twists and scene turns that raise the stakes, grounded in the motivations, obstacles, and consequences already established.",
   continue: "Continue the scene from where the draft leaves off.",
   consistency:
     "Analyze the current draft excerpt for contradictions with character profiles and established lore.",
+  lore:
+    "Survey the worldbuilding established so far and surface the rules, places, and history that matter for writing this story consistently.",
   series:
     "Survey the whole series: flag any contradictions in worldbuilding or character relationships between books, and suggest how the universe could grow consistently.",
+  plot:
+    "Assess the current draft for unresolved plot threads, pacing problems, and hooks worth setting up.",
   influence:
     "Map the literary, cinematic, and philosophical influences audible in this manuscript. " +
     "Treat influence as creative DNA — neither good nor bad. Cite specific passages as evidence, " +
@@ -65,13 +71,7 @@ export default function AssistPanel({
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (
-      !prompt.trim() &&
-      mode !== "continue" &&
-      mode !== "consistency" &&
-      mode !== "series" &&
-      mode !== "influence"
-    ) {
+    if (!prompt.trim() && !DEFAULT_PROMPTS[mode]) {
       return;
     }
 
@@ -193,7 +193,7 @@ export default function AssistPanel({
           disabled={loading}
           tabIndex={loading ? -1 : 0}
         >
-          Ask GhostWriter
+          Ask Arthur
         </button>
         <button
           type="button"

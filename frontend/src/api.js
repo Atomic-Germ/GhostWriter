@@ -189,7 +189,7 @@ export const api = {
     request(`/projects/${projectId}/extract`, {
       method: "POST",
       body: JSON.stringify(body),
-      timeoutMs: 600_000,
+      timeoutMs: 3_600_000,
     }),
 
   ttsStatus: (projectId) =>
@@ -318,7 +318,7 @@ export const api = {
     request("/assist", {
       method: "POST",
       body: JSON.stringify(body),
-      timeoutMs: 600_000,
+      timeoutMs: 3_600_000,
     }),
   assistStream,
   index: (projectId, chapterId = null) =>
