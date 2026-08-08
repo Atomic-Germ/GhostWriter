@@ -1,7 +1,7 @@
 # GhostWriter *Just a Helpful Ghost*
 ## It won't write for you though.
 
-Intelligent writing companion for authors. GhostWriter's AI is Arthur, and Arthur is never the author. Arthur does not try to be the author. It reads what you write and keeps story bible of your characters, chapters, and world lore, then uses RAG with an LLM of your choice to help you brainstorm, continue prose, check consistency, and catch plot holes. Most features don't actually require a running LLM -- this is not a story generating bot.
+Intelligent writing companion for authors. GhostWriter's AI is Arthur, and Arthur is never the author. Arthur does not try to be the author. It reads what you write and keeps story bible of your characters, chapters, and world lore, then uses RAG with an LLM of your choice to help you brainstorm, check consistency of characters and world-building over stories and entire series, and catch plot holes. Most features don't actually require a running LLM -- because *Arthur isn't the Author*.
 
 ## Features (MVP)
 
