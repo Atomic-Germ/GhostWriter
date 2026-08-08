@@ -89,11 +89,11 @@ export GW_LLM_BASE_URL=http://localhost:11434/v1
 export GW_LLM_MODEL=llama3.2
 ```
 
-**FastFlowLM*
+**FastFlowLM** (Recommended for AMD AI 340+ machines, light. Any Atomic-Germ or FastFlowLM HuggingFace or Modelscope repo will work, results vary)
 
 ```bash
 wget https://huggingface.co/Atomic-Germ/Qwen3.5-9B-Claude-4.8-Opus-NPU2/resolve/main/flm-add.py
-chmod +x flm-add.py
+python3 ./flm-add.py Atomic-Germ/Qwen3.5-9B-Claude-4.8-Opus-NPU2 
 FLM_CONFIG_PATH="$HOME/.config/flm/model_list.json" FLM_XCLBIN_PATH="$HOME/.config/flm" flm serve qwen3.5-claude:9b --port 8080
 ```
 
